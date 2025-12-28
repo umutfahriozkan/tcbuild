@@ -1,6 +1,6 @@
-#! /usr/bin/env sh
+#! /usr/bin/env bash
 
-#    Shell-based build system https://github.com/umtozkn/bs
+#    Shell-based build system https://github.com/umtozkn/bb
 #
 #    Copyright (C) 2026 Umut Fahri Ozkan
 #
@@ -17,96 +17,82 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-source build.vars
+if [[ -z "$1" ]]; then
+    echo "Missing build configuration parameter"
+fi
 
-throw_if_empty() {
-	if [[ -z "${!1}" ]]; then
-    	echo "Error: Variable \"$1\" can not be empty" >&2
-    	exit 1
-	fi
-}
-
-replace_if_empty() {
-	if [[ -z "${!1}" ]]; then
-		declare -g "$1=$2"
-	fi
-}
+source "$1"
 
 __TAB=$'\t'
 __NL=$'\n'
 
-__out="# MyMake Generator v1.0.0
-.PHONY: help
-help:
-	\$(info MyMake v1.0.0)
-	\$(info Registered groups:)
-"
+__out=""
+__help_out=""
+__phony_out=""
 
-throw_if_empty "groups"
-
-if [[ "$groups" == *"help"* ]]; then
-    echo "Error: Variable 'groups' cannot contain 'help'" >&2
+if [[ "$groups" == *"default"* || "$groups" == *"all"* ]]; then
+    echo "Error: Variable 'groups' cannot contain 'default' or 'all'" >&2
     exit 1
 fi
 
+var_all_silent="all_silent"
+var_all_final_executable="all_final_executable"
+var_all_final_flags="all_final_flags"
+var_default_final_executable="default_final_executable"
+var_default_final_flags="default_final_flags"
 for group in $groups; do
-
 var_description="${group}_description"
-replace_if_empty "$var_description" "No Description"
-__out+=$__TAB"\$(info - $group: ${!var_description})"$__NL
-done
-__out+=$__TAB"@echo \"\" > /dev/null"$__NL
-for group in $groups; do
-
 var_build_dir="${group}_build_dir"
 var_sources="${group}_sources"
+var_final_executable="${group}_final_executable"
+var_final_flags="${group}_final_flags"
 
-throw_if_empty "$var_sources"
+__phony_out+=" $group"
+__help_out+=$__TAB"\$(info - $group: ${!var_description})"$__NL
+__out+="$group: ${!var_build_dir}$group"$__NL$__TAB"$( [[ -z "$var" || "$var" == "true" ]] && echo '@';)${!var_final_executable:-${!var_default_final_executable}} ${!var_all_final_flags} ${!var_final_flags:-${!var_default_final_flags}}"$__NL
 
-replace_if_empty "$var_build_dir" "build/"
-
-__out+=".PHONY: $group"$__NL
-__out+="$group: ${!var_build_dir}$group"$__NL
-base_out="${!var_build_dir}$group: "
-recipes_out=""
+__out+="${!var_build_dir}$group: "
+__recipe_out="$__NL"
 
 for source in ${!var_sources}; do
 obj_out="${!var_build_dir}$source.o"
-base_out+="$obj_out "
-recipes_out+="${obj_out}: $source"$__NL
-recipes_out+=$__TAB"@mkdir -p \$(dir \$@)"$__NL
+__out+="$obj_out "
 
 ### The Real One
 source_name="${source%%.*}"
 source_name="${source_name//\//_}"
 source_extension="${source##*.}"
 
-default_silent="${group}_default_${source_extension}_silent"
-default_executable="${group}_default_${source_extension}_executable"
-default_flags="${group}_default_${source_extension}_flags"
+var_top_all_extension_flags="all_extension_${source_extension}_flags"
 
-source_silent="${group}_source_${source_name}_${source_extension}_silent"
-source_executable="${group}_source_${source_name}_${source_extension}_executable"
-source_flags="${group}_source_${source_name}_${source_extension}_flags"
+var_top_default_extension_executable="default_extension_${source_extension}_executable"
 
-final_silent="$( [[ "${!source_silent}" == "true" ]] || { [[ -z "${!source_silent}" && "${!default_silent}" == "true" ]] && echo '@'; } )"
-final_executable="${!source_executable:-${!default_executable}}"
-final_flags="${!source_flags:-${!default_flags}}"
+var_top_default_source_executable="default_source_${source_name}_${source_extension}_executable"
+var_top_default_source_flags="default_source_${source_name}_${source_extension}_flags"
+
+var_all_extension_flags="${group}_all_extension_${source_extension}_flags"
+
+var_default_extension_executable="${group}_default_extension_${source_extension}_executable"
+
+var_source_executable="${group}_source_${source_name}_${source_extension}_executable"
+var_source_flags="${group}_source_${source_name}_${source_extension}_flags"
+
+final_executable="${!var_source_executable:-${!var_top_default_source_executable:-${!var_default_extension_executable:-${!var_top_default_extension_executable}}}}"
+final_flags="${!var_top_all_extension_flags} ${!var_all_extension_flags} ${!var_top_default_source_flags} ${!var_source_flags}"
 
 
-recipes_out+=$__TAB"$final_silent$final_executable $final_flags"$__NL
+__recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB"$( [[ -z "$var" || "$var" == "true" ]] && echo '@';)$final_executable $final_flags"$__NL
 ### The Real One
 done
 
-base_out+=$__NL
-final_silent="${group}_final_silent"
-final_executable="${group}_final_executable"
-final_flags="${group}_final_flags"
-
-base_out+=$__TAB"$( [[ "${!final_silent}" == "true" ]] && echo '@';)${!final_executable} ${!final_flags}"
-__out+=$base_out$__NL$recipes_out$__NL
+__out+=$__recipe_out
 
 done
 
-
-echo "$__out" > Makefile
+if [[ -n "$__phony_out" && -n "$__help_out" && -n "$__out" ]]; then
+echo ".PHONY: __SECRET_INTERNAL$__phony_out
+__SECRET_INTERNAL:
+	\$(info Registered groups:)
+$__help_out$__TAB@echo \"\" > /dev/null
+$__out" > Makefile
+fi

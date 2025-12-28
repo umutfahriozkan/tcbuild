@@ -51,8 +51,13 @@ The `...` refers, a value that contains in `group` variable (keep reading)
 - **all_extension_(extension)_flags**: Defines flags of every (extension) files, not replaced by other variables
 - **default_extension_(extension)_executable**: Defines executable of every (extension) files, replaced by `..._default_extension_(extension)_executable` if defined
 - **default_source_(name)_(extension)_executable**: Defines executable of one file in every groups, replaced by `..._source_(name)_(extension)_executable` if defined
-- **default_source_(name)_(extension)_flags**: Defines flags of one file in every groups, not replaced
+- **default_source_(name)_(extension)_flags**: Defines flags of one file in every groups, not replaced by other variables
 - **groups**: This variable is main criticial variable for generating makefile, can not contain `all` or `default`, can take multiple values (eg. groups="foo bar"), the `...` refers one of values that `group` contains
 - **..._description**: Description of target
 - **..._build_dir**: Build path where the files will be emitted, never leave empty
 - **..._sources**: Can take many values (eg. "foo bar") but values should be relative path instead of full path
+- **..._all_extension_(extension)_flags**: Defines flags of every (extension) file in `...` group, not replaced by other variables
+- **..._default_extension_(extension)_executable**: Defines executable of every (extension) file in `...` group, replaced by `default_source_(name)_(extension)_executable` if defined 
+- **..._source_(name)_(extension)_executable**: Defines executable of (name).(extension) file in `...` group, not replaced by other variables
+- **..._final_executable**: Defines executable of final output in `...` group,, not replaced by other variables
+- **..._final_flags**: Defines flags of final output in `...` group, not replaced by other variables

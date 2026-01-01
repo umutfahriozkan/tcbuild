@@ -28,12 +28,12 @@ var_final_exec="build_final_exe"
 var_final_flags="build_final_flags"
 var_sources="build_sources"
 
-__out="${!var_build_dir}${!var_final_name}:"
 __recipe_out=""
+__objects=""
 
 for source in ${!var_sources}; do
 obj_out="${!var_build_dir}$source.o"
-__out+=" $obj_out "
+__objects+="$obj_out "
 
 ### The Real One
 source_name="${source%%.*}"
@@ -53,7 +53,7 @@ __recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB
 ### The Real One
 done
 
-__out+=$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"$__NL$__recipe_out
+__out="OBJ=$__objects$__NL${!var_build_dir}${!var_final_name}: \$(OBJ)"$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"$__NL$__recipe_out"-include \$(OBJ:.o=.d)"
 
 if [[ -n "$__out" ]]; then
 echo "$__out" > Makefile

@@ -17,33 +17,23 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-if [[ -z "$1" ]]; then
-    echo "Missing build configuration parameter"
-fi
-
-source "$1"
-
 __TAB=$'\t'
 __NL=$'\n'
-
-__out=""
 
 
 var_silent="build_silent"
 var_build_dir="build_build_dir"
 var_final_name="build_final_name"
 var_final_exec="build_final_exe"
-var_build_final_flags="build_final_flags"
+var_final_flags="build_final_flags"
 var_sources="build_sources"
 
-
-
-__out+="${!var_build_dir}${!var_final_name}: "
-__recipe_out="$__NL"
+__out="${!var_build_dir}${!var_final_name}:"
+__recipe_out=""
 
 for source in ${!var_sources}; do
 obj_out="${!var_build_dir}$source.o"
-__out+="$obj_out "
+__out+=" $obj_out "
 
 ### The Real One
 source_name="${source%%.*}"
@@ -59,11 +49,11 @@ var_source_flags="build_source_${source_name}_${source_extension}_flags"
 final_executable="${!var_source_exe:-${!var_top_ext_exe}}"
 final_flags="${!var_top_ext_flags} ${!var_source_flags}"
 
-__recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB"$( [[ -z "$var_all_silent" || "$var_all_silent" == "true" ]] && echo '@';)$final_executable $final_flags"$__NL
+__recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)$final_executable $final_flags"$__NL
 ### The Real One
 done
 
-__out+=$__recipe_out
+__out+=$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"$__NL$__recipe_out
 
 if [[ -n "$__out" ]]; then
 echo "$__out" > Makefile

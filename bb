@@ -32,13 +32,15 @@ __recipe_out=""
 __objects=""
 
 for source in ${!var_sources}; do
-obj_out="${!var_build_dir}$source.o"
-__objects+="$obj_out "
-
 ### The Real One
 source_name="${source%%.*}"
 source_name="${source_name//\//_}"
 source_extension="${source##*.}"
+
+var_source_out="build_source_${source_name}_${source_extension}_out"
+
+obj_out="${var_source_out:-${!var_build_dir}$source.o}"
+__objects+="$obj_out "
 
 var_top_ext_exe="build_ext_${source_extension}_exe"
 var_top_ext_flags="build_ext_${source_extension}_flags"

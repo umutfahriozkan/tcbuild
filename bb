@@ -42,7 +42,11 @@ source_var="${source//[\/.]/_}"
 
 var_source_out="build_source_${source_var}_out"
 
+if [ "$BUILD_MODE" == "release" ]; then 
+obj_out="$source"
+else
 obj_out="${!var_source_out:-${!var_build_dir}$source.o}"
+fi
 __objects+="$obj_out "
 
 var_top_ext_exe="build_ext_${source##*.}_exe"
@@ -59,7 +63,7 @@ __recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB
 done
 
 if [ "$BUILD_MODE" == "release" ]; then 
-__out="${!var_build_dir}${!var_final_name}: "$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"
+__out="${!var_build_dir}${!var_final_name}: $__objects"$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"
 else
 __out="OBJ=$__objects$__NL${!var_build_dir}${!var_final_name}: \$(OBJ)"$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"$__NL$__recipe_out"-include \$(OBJ:.o=.d)"
 fi

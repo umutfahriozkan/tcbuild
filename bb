@@ -33,20 +33,18 @@ __objects=""
 
 for source in ${!var_sources}; do
 ### The Real One
-source_name="${source%%.*}"
-source_name="${source_name//\//_}"
-source_extension="${source##*.}"
+source_var="${source//[\/.]/_}"
 
-var_source_out="build_source_${source_name}_${source_extension}_out"
+var_source_out="build_source_${source_var}_out"
 
 obj_out="${!var_source_out:-${!var_build_dir}$source.o}"
 __objects+="$obj_out "
 
-var_top_ext_exe="build_ext_${source_extension}_exe"
-var_top_ext_flags="build_ext_${source_extension}_flags"
+var_top_ext_exe="build_ext_${source##*.}_exe"
+var_top_ext_flags="build_ext_${source##*.}_flags"
 
-var_source_exe="build_source_${source_name}_${source_extension}_exe"
-var_source_flags="build_source_${source_name}_${source_extension}_flags"
+var_source_exe="build_source_${source_var}_exe"
+var_source_flags="build_source_${source_var}_flags"
 
 final_executable="${!var_source_exe:-${!var_top_ext_exe}}"
 final_flags="${!var_top_ext_flags} ${!var_source_flags}"

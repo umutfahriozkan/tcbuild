@@ -55,7 +55,11 @@ __recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB
 ### The Real One
 done
 
+if [ "$BUILD_MODE" == "release" ]; then 
+__out="${!var_build_dir}${!var_final_name}: "$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"
+else
 __out="OBJ=$__objects$__NL${!var_build_dir}${!var_final_name}: \$(OBJ)"$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"$__NL$__recipe_out"-include \$(OBJ:.o=.d)"
+fi
 
 if [[ -n "$__out" ]]; then
 echo "$__out" > Makefile

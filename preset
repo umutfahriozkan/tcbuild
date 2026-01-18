@@ -1,0 +1,11 @@
+#! /usr/bin/env bash
+
+if [ "$BUILD_MODE" == "debug" ]; then
+build_ext_c_flags+=" -c -MMD -ggdb -O0 -flto=thin"
+fi
+
+if [ "$BUILD_MODE" == "release" ]; then
+build_ext_c_flags+=" -g0 -O2"
+fi
+
+build_ext_c_flags+="-o \$@ \$<"

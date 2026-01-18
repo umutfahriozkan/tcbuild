@@ -17,6 +17,11 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+if [[ "$BUILD_MODE" != "release" && "$BUILD_MODE" != "debug" ]]; then
+    echo "Error: BUILD_MODE must be 'release' or 'debug'" >&2
+    exit 1
+fi
+
 __TAB=$'\t'
 __NL=$'\n'
 

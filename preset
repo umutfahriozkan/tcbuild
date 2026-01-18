@@ -8,4 +8,4 @@ if [ "$BUILD_MODE" == "release" ]; then
 build_ext_c_flags+=" -g0 -O2"
 fi
 
-build_ext_c_flags+="-o \$@ \$<"
+build_ext_c_flags+=" -o \$@ \$<"

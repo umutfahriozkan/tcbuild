@@ -17,56 +17,154 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-if [[ "$BUILD_MODE" != "release" && "$BUILD_MODE" != "debug" ]]; then
-    echo "Error: BUILD_MODE must be 'release' or 'debug'" >&2
-    exit 1
-fi
+build_source_exe() {
+    local exe="$2"
+
+    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$1"
+    local file="${realpath//[\/.]/_}"
+
+    declare -g "build_src_${file}_exe=$exe"
+    declare -g "build_realpath_${file}=$realpath"
+}
+
+build_source_flags() {
+    local flags=" $2"
+
+    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$1"
+    local file="${realpath//[\/.]/_}"
+
+    declare -g "build_src_${file}_flags+=$flags"
+    declare -g "build_realpath_${file}=$realpath"
+}
+
+build_group_source() {
+    local group="$1"
+
+    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$2"
+    local file="${realpath//[\/.]/_}"
+
+    declare -g "build_${group}_sources+= $file"
+    declare -g "build_realpath_${file}=$realpath"
+}
+
+build_group_source_exe() {
+    local group="$1"
+    local exe="$3"
+
+    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$2"
+    local file="${realpath//[\/.]/_}"
+
+    declare -g "build_${group}_src_${file}_exe=$exe"
+}
+
+build_group_source_flags() {
+    local group="$1"
+    local flags=" $3"
+
+    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$2"
+    local file="${realpath//[\/.]/_}"
+
+    declare -g "build_${group}_src_${file}_flags+=$flags"
+}
+
+import_group() {
+    local from="$1"
+    local to="$2"
+    local temp
+
+    temp="build_${from}_final_flags"
+    declare -g "build_${to}_final_flags+= ${!temp}"
+
+    for v in $(compgen -v "build_${from}_ext_"); do  
+    if [[ "$v" == *_flags ]]; then
+        declare -g "${v/build_${from}_ext_/build_${to}_ext_}+=${!v:+ ${!v}}"
+        declare -g "${v}="
+    fi
+    if [[ "$v" == *_exe ]]; then
+        declare -g "${v/build_${from}_ext_/build_${to}_ext_}="
+    fi
+    done
+
+
+    temp="build_${from}_sources"
+    for source in ${!temp}; do
+        declare -g "build_${to}_sources+= $source"
+        temp="build_${from}_src_${source}_flags"
+        declare -g "build_${to}_src_${source}_flags+= ${!temp}"
+
+        declare -g "build_${from}_src_${source}_exe="
+        declare -g "build_${from}_src_${source}_flags="
+    done
+
+    declare -g "build_${from}_sources="
+    declare -g "build_${from}_final_exe="
+    declare -g "build_${from}_final_flags="
+
+    temp="build_groups"
+    declare -g "build_groups=${!temp//${from}/}"
+}
+
+source preset
+
+source $1
+#####################################################
 
 __TAB=$'\t'
 __NL=$'\n'
 
+__targets=""
+__make_out=""
+var_build_dir="build_dir"
 
-var_silent="build_silent"
-var_build_dir="build_build_dir"
-var_final_name="build_final_name"
-var_final_exec="build_final_exe"
-var_final_flags="build_final_flags"
-var_sources="build_sources"
+for group in $build_groups; do
+__targets+="${!var_build_dir}/$group "
+
+var_group_final_exec="build_${group}_final_exe"
+var_group_final_flags="build_${group}_final_flags"
+var_group_sources="build_${group}_sources"
 
 __recipe_out=""
-__objects=""
+__final_objects=""
 
-for source in ${!var_sources}; do
+for source in ${!var_group_sources}; do
 ### The Real One
+temp="build_realpath_${source}"
+source="${!temp}"
 source_var="${source//[\/.]/_}"
 
-var_source_out="build_source_${source_var}_out"
-
-if [ "$BUILD_MODE" == "release" ]; then 
-obj_out="$source"
-else
-obj_out="${!var_source_out:-${!var_build_dir}$source.o}"
-fi
-__objects+="$obj_out "
+obj_out="${!var_build_dir}$source.o"
+__final_objects+=" $obj_out"
 
 var_top_ext_exe="build_ext_${source##*.}_exe"
-var_top_ext_flags="build_ext_${source##*.}_flags"
+var_group_ext_exe="build_${group}_ext_${source##*.}_exe"
+var_top_source_exe="build_src_${source_var}_exe"
+var_group_source_exe="build_${group}_src_${source_var}_exe"
+final_executable="${!var_group_source_exe:-${!var_top_source_exe:-${!var_group_ext_exe:-${!var_top_ext_exe}}}}"
 
-var_source_exe="build_source_${source_var}_exe"
-var_source_flags="build_source_${source_var}_flags"
+var_group_source_flags="build_${group}_src_${source_var}_flags"
+var_top_source_flags="build_src_${source_var}_flags"
+final_flags="${!var_top_source_flags} ${!var_group_source_flags}"
 
-final_executable="${!var_source_exe:-${!var_top_ext_exe}}"
-final_flags="${!var_top_ext_flags} ${!var_source_flags}"
+extensions="${source#*.}"
+IFS='.' read -ra parts <<< "$extensions"
+for p in "${parts[@]}"; do
+if [[ -n $p ]]; then
+top_flags="build_ext_${p}_flags"
+group_flags="build_${group}_ext_${p}_flags"
 
-__recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)$final_executable $final_flags"$__NL
+final_flags+=" ${!top_flags} ${!group_flags}"
+fi
+done
+
+__recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB"$final_executable $final_flags"$__NL
 ### The Real One
 done
 
-if [ "$BUILD_MODE" == "release" ]; then 
-__out="${!var_build_dir}${!var_final_name}: $__objects"$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"
-else
-__out="OBJ=$__objects$__NL${!var_build_dir}${!var_final_name}: \$(OBJ)"$__NL$__TAB"$( [[ -z "$var_silent" || "$var_silent" == "true" ]] && echo '@';)${!var_final_exec} ${!var_final_flags}"$__NL$__recipe_out"-include \$(OBJ:.o=.d)"
-fi
+__make_out+="OBJ_$group=$__final_objects$__NL${!var_build_dir}/$group:\$(OBJ_$group)$__NL$__TAB${!var_group_final_exec} ${!var_group_final_flags}"$__NL$__recipe_out"-include \$(OBJ_$group:=.d)"$__NL
+
+done
+
+__out="all: $__targets$__NL$__make_out"
 
 if [[ -n "$__out" ]]; then
 echo "$__out" > Makefile

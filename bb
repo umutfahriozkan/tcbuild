@@ -17,6 +17,33 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#################################################################################################################################
+
+if [[ "$BUILD_MODE" != "release" && "$BUILD_MODE" != "debug" ]]; then
+    echo "Warning: BUILD_MODE is invalid, setting as release" >&2
+    BUILD_MODE="release"
+fi
+export BUILD_MODE
+
+case "$OSTYPE" in
+    msys) 
+        PLATFORM="WinNT" 
+        ;;
+esac
+
+build_dir=build/
+
+build_ext_c_flags+=" -c -MMD -MF \$@.d -o \$@ \$<"
+
+if [ "$BUILD_MODE" == "debug" ]; then
+build_ext_c_flags+=" -ggdb -O0"
+fi
+
+if [ "$BUILD_MODE" == "release" ]; then
+build_ext_c_flags+=" -g0 -O2"
+fi
+
+#################################################################################################################################
 build_source_exe() {
     local exe="$2"
 
@@ -104,10 +131,8 @@ import_group() {
     declare -g "build_groups=${!temp//${from}/}"
 }
 
-source preset
-
 source $1
-#####################################################
+#################################################################################################################################
 
 __TAB=$'\t'
 __NL=$'\n'

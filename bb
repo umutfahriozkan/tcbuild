@@ -93,12 +93,12 @@ __make_out=""
 var_build_dir="build_dir"
 
 for group in $build_groups; do
-__targets+="${!var_build_dir}/$group "
-
 var_group_final_exe="build_${group}_final_exe"
 var_group_final_exe_suffix="build_${group}_final_exe_suffix"
 var_group_final_flags="build_${group}_final_flags"
 var_group_sources="build_${group}_sources"
+
+__targets+="${!var_build_dir}/$group${!var_group_final_exe_suffix} "
 
 __recipe_out=""
 __final_objects=""

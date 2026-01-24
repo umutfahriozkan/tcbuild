@@ -31,7 +31,7 @@ case "$OSTYPE" in
         ;;
 esac
 
-build_dir=build/
+build_dir=build
 
 build_ext_c_flags+=" -c -MMD -MF \$@.d -o \$@ \$<"
 

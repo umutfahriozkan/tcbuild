@@ -44,56 +44,6 @@ build_ext_c_flags+=" -g0 -O2"
 fi
 
 #################################################################################################################################
-build_source_exe() {
-    local exe="$2"
-
-    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$1"
-    local file="${realpath//[\/.]/_}"
-
-    declare -g "build_src_${file}_exe=$exe"
-    declare -g "build_realpath_${file}=$realpath"
-}
-
-build_source_flags() {
-    local flags=" $2"
-
-    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$1"
-    local file="${realpath//[\/.]/_}"
-
-    declare -g "build_src_${file}_flags+=$flags"
-    declare -g "build_realpath_${file}=$realpath"
-}
-
-build_group_source() {
-    local group="$1"
-
-    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$2"
-    local file="${realpath//[\/.]/_}"
-
-    declare -g "build_${group}_sources+= $file"
-    declare -g "build_realpath_${file}=$realpath"
-}
-
-build_group_source_exe() {
-    local group="$1"
-    local exe="$3"
-
-    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$2"
-    local file="${realpath//[\/.]/_}"
-
-    declare -g "build_${group}_src_${file}_exe=$exe"
-}
-
-build_group_source_flags() {
-    local group="$1"
-    local flags=" $3"
-
-    local realpath="$(cd $(dirname $BASH_SOURCE) && pwd)/$2"
-    local file="${realpath//[\/.]/_}"
-
-    declare -g "build_${group}_src_${file}_flags+=$flags"
-}
-
 import_group() {
     local from="$1"
     local to="$2"
@@ -105,17 +55,18 @@ import_group() {
     for v in $(compgen -v "build_${from}_ext_"); do  
     if [[ "$v" == *_flags ]]; then
         declare -g "${v/build_${from}_ext_/build_${to}_ext_}+=${!v:+ ${!v}}"
-        declare -g "${v}="
     fi
     if [[ "$v" == *_exe ]]; then
         declare -g "${v/build_${from}_ext_/build_${to}_ext_}="
     fi
+        declare -g "${v}="
     done
 
 
     temp="build_${from}_sources"
     for source in ${!temp}; do
         declare -g "build_${to}_sources+= $source"
+        source="${source//[\/.]/_}"
         temp="build_${from}_src_${source}_flags"
         declare -g "build_${to}_src_${source}_flags+= ${!temp}"
 
@@ -153,11 +104,9 @@ __final_objects=""
 
 for source in ${!var_group_sources}; do
 ### The Real One
-temp="build_realpath_${source}"
-source="${!temp}"
 source_var="${source//[\/.]/_}"
 
-obj_out="${!var_build_dir}$source.o"
+obj_out="${!var_build_dir}/$source.o"
 __final_objects+=" $obj_out"
 
 var_top_ext_exe="build_ext_${source##*.}_exe"

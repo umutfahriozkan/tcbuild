@@ -43,10 +43,6 @@ if [ "$BUILD_MODE" == "release" ]; then
 build_ext_c_flags+=" -g0 -O2"
 fi
 
-if [ "$PLATFORM" == "WinNT" ]; then
-global_final_exe_suffix=".exe"
-fi
-
 #################################################################################################################################
 import_group() {
     local from="$1"
@@ -100,6 +96,7 @@ for group in $build_groups; do
 __targets+="${!var_build_dir}/$group "
 
 var_group_final_exe="build_${group}_final_exe"
+var_group_final_exe_suffix="build_${group}_final_exe_suffix"
 var_group_final_flags="build_${group}_final_flags"
 var_group_sources="build_${group}_sources"
 
@@ -138,7 +135,7 @@ __recipe_out+="${obj_out}: $source"$__NL$__TAB"@mkdir -p \$(dir \$@)"$__NL$__TAB
 ### The Real One
 done
 
-__make_out+="OBJ_$group=$__final_objects$__NL${!var_build_dir}/$group${global_final_exe_suffix}:\$(OBJ_$group)$__NL$__TAB${!var_group_final_exe} ${!var_group_final_flags}"$__NL$__recipe_out"-include \$(OBJ_$group:=.d)"$__NL
+__make_out+="OBJ_$group=$__final_objects$__NL${!var_build_dir}/$group${!var_group_final_exe_suffix}:\$(OBJ_$group)$__NL$__TAB${!var_group_final_exe} ${!var_group_final_flags}"$__NL$__recipe_out"-include \$(OBJ_$group:=.d)"$__NL
 
 done
 

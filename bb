@@ -27,7 +27,7 @@ export BUILD_MODE
 
 case "$OSTYPE" in
     msys) 
-        PLATFORM="WinNT" 
+        PLATFORM="win32" 
         ;;
 esac
 

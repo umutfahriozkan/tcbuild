@@ -1,0 +1,35 @@
+{
+  "name": "tcbuilder",
+  "version": "1.0.4",
+  "description": "Build System",
+  "homepage": "https://github.com/umutfahriozkan/tcbuild#readme",
+  "bugs": {
+    "url": "https://github.com/umutfahriozkan/tcbuild/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/umutfahriozkan/tcbuild.git"
+  },
+  "license": "GPL-3.0-or-later",
+  "author": "umutfahriozkan",
+  "type": "module",
+  "module": "./dist/tcbuild.js",
+  "bin": {
+    "tcbuild": "./bin/tcbuild"
+  },
+  "types": "./dist/tcbuild.d.ts",
+  "scripts": {
+    "prepublishOnly": "npm run build",
+    "clean": "rimraf dist",
+    "build": "npm run clean && tsc",
+    "start": "npm run build && node dist/tcbuild.js"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "rimraf": "^6.1.3",
+    "typescript": "^6.0.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

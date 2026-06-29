@@ -1,6 +1,6 @@
 {
   "name": "tcbuilder",
-  "version": "1.1.7",
+  "version": "2.0.2",
   "description": "Build System",
   "homepage": "https://github.com/umutfahriozkan/tcbuild#readme",
   "bugs": {
@@ -38,6 +38,6 @@
     "typescript": "6.0.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

@@ -1,13 +1,12 @@
 # tcbuild
-Generate automated Makefile from javascript. wahooo
+A fast, dependency-aware build system powered by JavaScript. Wahooo!
 
 ## Prerequisites
 - **Node.js**
 - **NPM**
-- **Make**
 
 ## Installation
 ```bash
 npm i -g tcbuilder
-# now you can use tcbuild
+tcbuild
 ```

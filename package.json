@@ -1,6 +1,6 @@
 {
   "name": "tcbuilder",
-  "version": "1.0.4",
+  "version": "1.1.7",
   "description": "Build System",
   "homepage": "https://github.com/umutfahriozkan/tcbuild#readme",
   "bugs": {
@@ -13,21 +13,29 @@
   "license": "GPL-3.0-or-later",
   "author": "umutfahriozkan",
   "type": "module",
-  "module": "./dist/tcbuild.js",
+  "files": [
+    "dist"
+  ],
+  "module": "./dist/tcbuild.mjs",
   "bin": {
-    "tcbuild": "./bin/tcbuild"
+    "tcbuild": "dist/tcbuild.mjs"
   },
-  "types": "./dist/tcbuild.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/tcbuild.d.mts",
+      "default": "./dist/tcbuild.mjs"
+    }
+  },
+  "types": "./dist/tcbuild.d.mts",
   "scripts": {
-    "prepublishOnly": "npm run build",
-    "clean": "rimraf dist",
-    "build": "npm run clean && tsc",
-    "start": "npm run build && node dist/tcbuild.js"
+    "prepack": "tsdown --dts --minify --root . --no-clean -d dist tcbuild",
+    "start": "tsgo && node dist/tcbuild.mjs"
   },
   "devDependencies": {
-    "@types/node": "^25.5.2",
-    "rimraf": "^6.1.3",
-    "typescript": "^6.0.2"
+    "@types/node": "^26.0.1",
+    "@typescript/native-preview": "7.0.0-dev.20260628.1",
+    "tsdown": "^0.22.3",
+    "typescript": "6.0.3"
   },
   "engines": {
     "node": ">=20"

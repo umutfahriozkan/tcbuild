@@ -1,0 +1,13 @@
+{
+    "files.exclude": {
+        "tsconfig.json": true,
+        "pnpm-lock.yaml": true,
+        ".vscode": true,
+        "node_modules": true,
+        ".gitattributes": true,
+        ".gitignore": true,
+        ".prettierrc": true,
+        "LICENSE": true,
+        "README.md": true
+    }
+}

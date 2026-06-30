@@ -1,6 +1,6 @@
 {
   "name": "tcbuilder",
-  "version": "2.0.2",
+  "version": "2.0.4",
   "description": "Build System",
   "homepage": "https://github.com/umutfahriozkan/tcbuild#readme",
   "bugs": {
@@ -16,26 +16,23 @@
   "files": [
     "dist"
   ],
-  "module": "./dist/tcbuild.mjs",
+  "module": "./dist/tcbuild.js",
   "bin": {
-    "tcbuild": "dist/tcbuild.mjs"
+    "tcbuild": "dist/tcbuild.js"
   },
   "exports": {
     ".": {
-      "types": "./dist/tcbuild.d.mts",
-      "default": "./dist/tcbuild.mjs"
+      "types": "./dist/tcbuild.d.ts",
+      "default": "./dist/tcbuild.js"
     }
   },
-  "types": "./dist/tcbuild.d.mts",
+  "types": "./dist/tcbuild.d.ts",
   "scripts": {
-    "prepack": "tsdown --dts --minify --root . --no-clean -d dist tcbuild",
-    "start": "tsgo && node dist/tcbuild.mjs"
+    "prepack": "tsgo"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
-    "@typescript/native-preview": "7.0.0-dev.20260628.1",
-    "tsdown": "^0.22.3",
-    "typescript": "6.0.3"
+    "@typescript/native-preview": "7.0.0-dev.20260628.1"
   },
   "engines": {
     "node": ">=22"

@@ -383,11 +383,10 @@ process.once('beforeExit', async () => {
       if (needsRebuild(path.join(process.cwd(), fileName), objFullPath)) {
         fs.mkdirSync(path.dirname(objFullPath), { recursive: true })
 
-        let objFlags = `${globalSrcFlags[fileName]}${file.flags ?? ''}`
-
+        let objFlags = `${globalSrcFlags[fileName] ?? ""} ${file.flags ?? ''}`
         for (const ext of fileName.split('.').slice(1)) {
           if (ext.length <= 0) continue
-          objFlags += `${globalExtFlags[ext] ?? ''} ${group.extFlags[ext] ?? ''}`
+          objFlags += ` ${globalExtFlags[ext] ?? ''} ${group.extFlags[ext] ?? ''}`
         }
 
         if (file.toBeRemoved.length > 0)

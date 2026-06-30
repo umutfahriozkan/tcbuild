@@ -37,6 +37,21 @@ global.is_linux = process.platform === 'linux'
 
 //global.build_dir = `build/${is_debug ? "debug" : "release"}/${platform}`;
 global.build_dir = `build/${is_debug ? 'debug' : 'release'}`
+
+// Preset
+function preset() {
+//build_ext_c_flags+=" -c -MMD -MF \$@.d -o \$@ \$<"
+
+//if [ "$BUILD_MODE" == "debug" ]; then
+//build_ext_c_flags+=" -ggdb -O0"
+//fi
+
+//if [ "$BUILD_MODE" == "release" ]; then
+//build_ext_c_flags+=" -g0 -O2"
+//fi
+}
+// Preset
+
 // #endregion
 
 // #region Tree Builder
@@ -45,12 +60,16 @@ declare global {
   var extExecutable: typeof _extExecutable
   var extFlags: typeof _extFlags
   var extSuffix: typeof _extSuffix
+  var srcExecutable: typeof _srcExecutable
+  var srcFlags: typeof _srcFlags
   var groupFinalExecutable: typeof _groupFinalExecutable
   var groupFinalExecutableSuffix: typeof _groupFinalExecutableSuffix
   var groupFinalFlags: typeof _groupFinalFlags
   var groupFinalFlagsInputPattern: typeof _groupFinalFlagsInputPattern
   var groupFile: typeof _groupFile
+  var groupFileExecutable: typeof _groupFileExecutable
   var group: typeof _group
+//  var import: typeof _import
 }
 //console.info('INFO: Current build mode: ' + (is_debug ? 'debug' : 'release'))
 
@@ -79,10 +98,10 @@ type Group = {
   files: Record<
     string,
     {
-      flags: string
       executable: string
+      flags: string
       toBeRemoved: string[]
-      includeInFinalOutput: boolean
+      includeInFinalOutput: boolean | 'notconfigured'
     }
   >
   extFlags: StringKeyValue
@@ -98,12 +117,14 @@ type Group = {
 const globalExtExecutable: StringKeyValue = {}
 const globalExtFlags: StringKeyValue = {}
 const globalExtSuffix: StringKeyValue = {}
+const globalSrcExecutable: StringKeyValue = {}
+const globalSrcFlags: StringKeyValue = {}
 
 const groups: Record<string, Group> = {}
 let currentGroup: Group | null = null
 
 //
-function _extExecutable(ext: string, exec?: string): string {
+function _extExecutable(ext: string, exec?: string) {
   let assign = globalExtExecutable
   if (currentGroup !== null) assign = currentGroup.extExecutable
   if (exec) assign[ext] = exec
@@ -111,7 +132,7 @@ function _extExecutable(ext: string, exec?: string): string {
 }
 global.extExecutable = _extExecutable
 
-function _extFlags(ext: string, flags?: string): string {
+function _extFlags(ext: string, flags?: string) {
   let assign = globalExtFlags
   if (currentGroup !== null) assign = currentGroup.extFlags
   if (!assign[ext]) assign[ext] = ''
@@ -120,13 +141,30 @@ function _extFlags(ext: string, flags?: string): string {
 }
 global.extFlags = _extFlags
 
-function _extSuffix(ext: string, suffix?: string): string {
+function _extSuffix(ext: string, suffix?: string) {
   let assign = globalExtSuffix
   if (currentGroup !== null) assign = currentGroup.extSuffix
   if (suffix) assign[ext] = suffix
   return assign[ext] ?? ''
 }
 global.extSuffix = _extSuffix
+
+function _srcExecutable(src: string, exec?: string) {
+  if (currentGroup !== null) throw 'src function called inside group'
+  const srcName = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + src
+  if (exec) globalSrcExecutable[srcName] = exec
+  return globalSrcExecutable[srcName] ?? ''
+}
+global.srcExecutable = _srcExecutable
+
+function _srcFlags(src: string, flags?: string) {
+  if (currentGroup !== null) throw 'src function called inside group'
+  const srcName = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + src
+  if (!globalSrcFlags[srcName]) globalSrcFlags[srcName] = ''
+  if (flags && flags.length > 0) globalSrcFlags[srcName] += ` ${flags}`
+  return globalSrcFlags[srcName] ?? ''
+}
+global.srcFlags = _srcFlags
 
 function _groupFinalFlags(flags: string, toBeRemoved: string | string[]) {
   if (!currentGroup) throw 'any group function called outside of group'
@@ -169,27 +207,46 @@ global.groupFinalFlagsInputPattern = _groupFinalFlagsInputPattern
 function _groupFile(
   fileName: string,
   flags?: string,
-  flagsToBeRemoved?: string,
-  includeInFinalOutput?: boolean
+  flagsToBeRemoved?: string | string[],
+  includeInFinalOutput?: boolean | "notconfigured"
 ): void {
   if (!currentGroup) throw 'any group function called outside of group'
   const file = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + fileName
   let currentGroupFile = currentGroup.files[file]
   if (!currentGroupFile) {
     currentGroup.files[file] = currentGroupFile = {
-      flags: '',
       executable: '',
+      flags: '',
       toBeRemoved: [],
       includeInFinalOutput: true
     }
   }
 
-  if (flags) currentGroupFile.flags += ` ${flags}`
-  if (flagsToBeRemoved) currentGroupFile.toBeRemoved.push(flagsToBeRemoved)
+  if (flags && flags.length > 0) currentGroupFile.flags += ` ${flags}`
+  if (flagsToBeRemoved && flagsToBeRemoved.length > 0) {
+    if (typeof flagsToBeRemoved === 'string') currentGroupFile.toBeRemoved.push(flagsToBeRemoved)
+    else if (Array.isArray(flagsToBeRemoved)) {
+      currentGroupFile.toBeRemoved.push(...flagsToBeRemoved)
+    } else {
+      throw 'What are you doing? ' + typeof flagsToBeRemoved
+    }
+  }
+  if(currentGroupFile.includeInFinalOutput === "notconfigured" && includeInFinalOutput !== "notconfigured")
+    currentGroupFile.includeInFinalOutput = true
   if (includeInFinalOutput !== undefined)
     currentGroupFile.includeInFinalOutput = includeInFinalOutput
 }
 global.groupFile = _groupFile
+
+function _groupFileExecutable(src: string, exec?: string) {
+  if (!currentGroup) throw 'any group function called outside of group'
+  const file = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + src
+  if (!currentGroup.files[file]) groupFile(src, "", "", "notconfigured")
+  // @ts-ignore
+  if (exec) currentGroup.files[file].executable = exec
+  return currentGroup.files[file]?.executable ?? '' 
+}
+global.groupFileExecutable = _groupFileExecutable
 
 async function _group(name: string | null, fn: () => void) {
   if (name && !groups[name])
@@ -219,6 +276,49 @@ async function _group(name: string | null, fn: () => void) {
   }
 }
 global.group = _group
+
+function _import(fromName: string, toName: string, deleteOldOne = true) {
+    if(!((typeof fromName === "string" && fromName.length > 0) && (typeof toName === "string" && toName.length > 0))) throw "import function got invalid arguments"
+
+    const from = groups[fromName]
+    const to = groups[toName]
+    /*
+    local temp
+
+    temp="build_${from}_final_flags"
+    declare -g "build_${to}_final_flags+= ${!temp}"
+
+    for v in $(compgen -v "build_${from}_ext_"); do  
+    if [[ "$v" == *_flags ]]; then
+        declare -g "${v/build_${from}_ext_/build_${to}_ext_}+=${!v:+ ${!v}}"
+    fi
+    if [[ "$v" == *_exe ]]; then
+        declare -g "${v/build_${from}_ext_/build_${to}_ext_}="
+    fi
+        declare -g "${v}="
+    done
+
+
+    temp="build_${from}_sources"
+    for source in ${!temp}; do
+        declare -g "build_${to}_sources+= $source"
+        source="${source//[\/.]/_}"
+        temp="build_${from}_src_${source}_flags"
+        declare -g "build_${to}_src_${source}_flags+= ${!temp}"
+
+        declare -g "build_${from}_src_${source}_exe="
+        declare -g "build_${from}_src_${source}_flags="
+    done
+
+    declare -g "build_${from}_sources="
+    declare -g "build_${from}_final_exe="
+    declare -g "build_${from}_final_flags="
+
+    temp="build_groups"
+    declare -g "build_groups=${!temp//${from}/}"
+    */
+}
+//global.build = _build
 
 build() // Now build the tree
 // #endregion
@@ -279,11 +379,11 @@ process.once('beforeExit', async () => {
       const suffix = globalExtSuffix[fileLastExt] ?? group.extSuffix[fileLastExt]
       const obj = `${build_dir}/${fileName}${suffix ? `.${suffix}` : ''}`
       const objFullPath = path.join(process.cwd(), obj)
-      if (file.includeInFinalOutput) objects.push({ obj, fullPath: objFullPath })
+      if (file.includeInFinalOutput === true) objects.push({ obj, fullPath: objFullPath })
       if (needsRebuild(path.join(process.cwd(), fileName), objFullPath)) {
         fs.mkdirSync(path.dirname(objFullPath), { recursive: true })
 
-        let objFlags = `${/* globalSrcFileFlags */ ''}${file.flags ?? ''}`
+        let objFlags = `${globalSrcFlags[fileName]}${file.flags ?? ''}`
 
         for (const ext of fileName.split('.').slice(1)) {
           if (ext.length <= 0) continue
@@ -294,8 +394,9 @@ process.once('beforeExit', async () => {
           for (const remove of file.toBeRemoved) objFlags = objFlags.replaceAll(remove, '')
 
         const executable =
-          file.executable ||
-          /*globalSrcFileExec ||*/ group.extExecutable[fileLastExt] ||
+          (file.executable.length > 0 ? file.executable : undefined) ||
+          globalSrcExecutable[fileName] ||
+          group.extExecutable[fileLastExt] ||
           globalExtExecutable[fileLastExt]
         const cmd = `${executable} ${objFlags.replaceAll('{in}', fileName).replaceAll('{out}', obj)}` // out and input handling
         console.log(cmd)
@@ -305,7 +406,8 @@ process.once('beforeExit', async () => {
 
     const finalOutName = `${build_dir}/${name}${group.finalExeSuffix ? `.${group.finalExeSuffix}` : ``}`
     const finalOutFullPath = path.join(process.cwd(), finalOutName)
-    if (group.finalExe.length > 0 &&
+    if (
+      group.finalExe.length > 0 &&
       linkNeedsRebuild(
         finalOutFullPath,
         objects.map(x => x.fullPath)

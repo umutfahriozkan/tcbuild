@@ -22,6 +22,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import url from 'node:url'
 import { execSync } from 'node:child_process'
+import * as glob from 'glob'
 
 // #region Util
 declare global {
@@ -29,6 +30,7 @@ declare global {
   var is_win: boolean
   var is_linux: boolean
   var build_dir: string
+  var preset: typeof _preset
 }
 
 global.is_debug = process.argv[2] !== 'release'
@@ -39,19 +41,19 @@ global.is_linux = process.platform === 'linux'
 global.build_dir = `build/${is_debug ? 'debug' : 'release'}`
 
 // Preset
-function preset() {
-//build_ext_c_flags+=" -c -MMD -MF \$@.d -o \$@ \$<"
+function _preset() {
+  extFlags('c', '-c -MMD -MF {out}.d -o {out} {in}')
 
-//if [ "$BUILD_MODE" == "debug" ]; then
-//build_ext_c_flags+=" -ggdb -O0"
-//fi
+  if (is_debug) {
+    extFlags('c', '-ggdb -O0')
+  } else {
+    extFlags('c', '-g0 -O2')
+  }
 
-//if [ "$BUILD_MODE" == "release" ]; then
-//build_ext_c_flags+=" -g0 -O2"
-//fi
+  extFlags('cpp', extFlags('c'))
 }
 // Preset
-
+global.preset = _preset
 // #endregion
 
 // #region Tree Builder
@@ -69,24 +71,33 @@ declare global {
   var groupFile: typeof _groupFile
   var groupFileExecutable: typeof _groupFileExecutable
   var group: typeof _group
-//  var import: typeof _import
+  var groupGlob: typeof _groupGlob
+  //  var import: typeof _import
 }
 //console.info('INFO: Current build mode: ' + (is_debug ? 'debug' : 'release'))
 
 const contextStack: string[] = []
 
-async function _build(name: string = '') {
-  const file = path.join(process.cwd(), contextStack.join('/'), name, 'build.js')
-
+async function _build(name: string = '', cb?: () => any) {
+  let prevStack = contextStack.join("/")
   if (name !== '') contextStack.push(name)
 
-  try {
-    await import(url.pathToFileURL(file).href)
-  } catch (e) {
-    console.log("Can't load build.js, is file existing?")
-    throw e
-  } finally {
+  if (cb) {
+    cb()
     if (name !== '') contextStack.pop()
+  } else {
+    try {
+      const file = path.join(process.cwd(), prevStack, name, 'build.js')
+
+      if (!file.startsWith(path.resolve(process.cwd())))
+        throw 'Build system outside of own working directory'
+      await import(url.pathToFileURL(file).href)
+    } catch (e) {
+      console.log("Can't load build.js, is file existing?")
+      throw e
+    } finally {
+       if (name !== '') contextStack.pop()
+    }
   }
 }
 global.build = _build
@@ -208,10 +219,12 @@ function _groupFile(
   fileName: string,
   flags?: string,
   flagsToBeRemoved?: string | string[],
-  includeInFinalOutput?: boolean | "notconfigured"
+  includeInFinalOutput?: boolean | 'notconfigured'
 ): void {
   if (!currentGroup) throw 'any group function called outside of group'
   const file = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + fileName
+  if (!path.resolve(path.join(process.cwd(), file)).startsWith(path.resolve(process.cwd())))
+    throw 'Build system outside of own working directory'
   let currentGroupFile = currentGroup.files[file]
   if (!currentGroupFile) {
     currentGroup.files[file] = currentGroupFile = {
@@ -231,7 +244,10 @@ function _groupFile(
       throw 'What are you doing? ' + typeof flagsToBeRemoved
     }
   }
-  if(currentGroupFile.includeInFinalOutput === "notconfigured" && includeInFinalOutput !== "notconfigured")
+  if (
+    currentGroupFile.includeInFinalOutput === 'notconfigured' &&
+    includeInFinalOutput !== 'notconfigured'
+  )
     currentGroupFile.includeInFinalOutput = true
   if (includeInFinalOutput !== undefined)
     currentGroupFile.includeInFinalOutput = includeInFinalOutput
@@ -241,10 +257,10 @@ global.groupFile = _groupFile
 function _groupFileExecutable(src: string, exec?: string) {
   if (!currentGroup) throw 'any group function called outside of group'
   const file = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + src
-  if (!currentGroup.files[file]) groupFile(src, "", "", "notconfigured")
+  if (!currentGroup.files[file]) groupFile(src, '', '', 'notconfigured')
   // @ts-ignore
   if (exec) currentGroup.files[file].executable = exec
-  return currentGroup.files[file]?.executable ?? '' 
+  return currentGroup.files[file]?.executable ?? ''
 }
 global.groupFileExecutable = _groupFileExecutable
 
@@ -277,12 +293,36 @@ async function _group(name: string | null, fn: () => void) {
 }
 global.group = _group
 
-function _import(fromName: string, toName: string, deleteOldOne = true) {
-    if(!((typeof fromName === "string" && fromName.length > 0) && (typeof toName === "string" && toName.length > 0))) throw "import function got invalid arguments"
+async function _groupGlob(globXp: string, globOptions: any, callBuildFiles = false) {
+  if (!currentGroup) throw 'any group function called outside of group'
 
-    const from = groups[fromName]
-    const to = groups[toName]
-    /*
+  const globbed = glob.globSync(globXp, { cwd: contextStack.join('/'), ...globOptions })
+  for (let globPath of globbed) {
+    globPath = path.join(contextStack.join('/'), globPath)
+    if (!fs.statSync(path.join(process.cwd(), globPath)).isFile()) continue
+    if (!path.join(process.cwd(), globPath).startsWith(path.resolve(process.cwd())))
+      console.error('glob outside of working directory: ' + globPath)
+    if (globPath.endsWith('/build.js')) {
+      if (callBuildFiles) await build(path.dirname(globPath))
+    } else groupFile(globPath)
+  }
+}
+global.groupGlob = _groupGlob
+
+function _import(fromName: string, toName: string, deleteOldOne = true) {
+  if (
+    !(
+      typeof fromName === 'string' &&
+      fromName.length > 0 &&
+      typeof toName === 'string' &&
+      toName.length > 0
+    )
+  )
+    throw 'import function got invalid arguments'
+
+  const from = groups[fromName]
+  const to = groups[toName]
+  /*
     local temp
 
     temp="build_${from}_final_flags"
@@ -325,6 +365,8 @@ build() // Now build the tree
 
 // #region Runtime
 function needsRebuild(src: string, obj: string): boolean {
+  src = path.join(process.cwd(), src)
+  obj = path.join(process.cwd(), obj)
   if (!fs.existsSync(src)) throw new Error(`${src} does not existis!`)
   if (!fs.existsSync(obj)) return true
 
@@ -357,12 +399,13 @@ function needsRebuild(src: string, obj: string): boolean {
 }
 
 function linkNeedsRebuild(output: string, objects: readonly string[]): boolean {
+  output = path.join(process.cwd(), output)
   if (!fs.existsSync(output)) return true
 
   const outputTime = fs.statSync(output).mtimeMs
 
   for (const obj of objects) {
-    if (fs.statSync(obj).mtimeMs > outputTime) return true
+    if (fs.statSync(path.join(process.cwd(), obj)).mtimeMs > outputTime) return true
   }
 
   return false
@@ -371,22 +414,21 @@ function linkNeedsRebuild(output: string, objects: readonly string[]): boolean {
 process.once('beforeExit', async () => {
   fs.mkdirSync(path.dirname(path.join(process.cwd(), build_dir)), { recursive: true })
   for (const [name, group] of Object.entries(groups)) {
-    const objects: { obj: string; fullPath: string }[] = []
+    const objects: string[] = []
 
     for (const [fileName, file] of Object.entries(group.files)) {
       const fileLastExt = fileName.split('.').pop()!
 
       const suffix = globalExtSuffix[fileLastExt] ?? group.extSuffix[fileLastExt]
       const obj = `${build_dir}/${fileName}${suffix ? `.${suffix}` : ''}`
-      const objFullPath = path.join(process.cwd(), obj)
-      if (file.includeInFinalOutput === true) objects.push({ obj, fullPath: objFullPath })
-      if (needsRebuild(path.join(process.cwd(), fileName), objFullPath)) {
-        fs.mkdirSync(path.dirname(objFullPath), { recursive: true })
+      if (file.includeInFinalOutput === true) objects.push(obj)
+      if (needsRebuild(fileName, obj)) {
+        fs.mkdirSync(path.dirname(path.join(process.cwd(), obj)), { recursive: true })
 
-        let objFlags = `${globalSrcFlags[fileName] ?? ""} ${file.flags ?? ''}`
+        let objFlags = `${globalSrcFlags[fileName] ?? ''} ${file.flags ?? ''}`
         for (const ext of fileName.split('.').slice(1)) {
-          if (ext.length <= 0) continue
-          objFlags += ` ${globalExtFlags[ext] ?? ''} ${group.extFlags[ext] ?? ''}`
+          if (ext.length > 0)
+            objFlags += ` ${globalExtFlags[ext] ?? ''} ${group.extFlags[ext] ?? ''}`
         }
 
         if (file.toBeRemoved.length > 0)
@@ -398,26 +440,23 @@ process.once('beforeExit', async () => {
           group.extExecutable[fileLastExt] ||
           globalExtExecutable[fileLastExt]
         const cmd = `${executable} ${objFlags.replaceAll('{in}', fileName).replaceAll('{out}', obj)}` // out and input handling
+        if (!executable) {
+          console.log(fileName + ' is being skipped due to wrong confugruation')
+          continue
+        }
         console.log(cmd)
         execSync(cmd, { stdio: 'inherit' })
       }
     }
 
     const finalOutName = `${build_dir}/${name}${group.finalExeSuffix ? `.${group.finalExeSuffix}` : ``}`
-    const finalOutFullPath = path.join(process.cwd(), finalOutName)
-    if (
-      group.finalExe.length > 0 &&
-      linkNeedsRebuild(
-        finalOutFullPath,
-        objects.map(x => x.fullPath)
-      )
-    ) {
+    if (group.finalExe.length > 0 && linkNeedsRebuild(finalOutName, objects)) {
       let finalFlags = group.finalFlags
       if (group.finalFlagsToBeRemoved.length > 0)
         for (const remove of group.finalFlagsToBeRemoved)
           finalFlags = finalFlags.replaceAll(remove, '')
 
-      const cmd = `${group.finalExe} ${finalFlags.replaceAll('{out}', finalOutName).replaceAll('{in}', objects.map(x => group.finalInputPattern.replaceAll('{in}', x.obj)).join(' '))}`
+      const cmd = `${group.finalExe} ${finalFlags.replaceAll('{out}', finalOutName).replaceAll('{in}', objects.map(x => group.finalInputPattern.replaceAll('{in}', x)).join(' '))}`
       console.log(cmd)
       execSync(cmd, {
         stdio: 'inherit'

@@ -297,14 +297,14 @@ async function _groupGlob(globXp: string, globOptions: any, callBuildFiles = fal
   if (!currentGroup) throw 'any group function called outside of group'
 
   const globbed = glob.globSync(globXp, { cwd: contextStack.join('/'), ...globOptions })
-  for (let globPath of globbed) {
-    globPath = path.join(contextStack.join('/'), globPath)
+  for (let realGlobPath of globbed) {
+    const globPath = path.join(contextStack.join('/'), realGlobPath)
     if (!fs.statSync(path.join(process.cwd(), globPath)).isFile()) continue
     if (!path.join(process.cwd(), globPath).startsWith(path.resolve(process.cwd())))
       console.error('glob outside of working directory: ' + globPath)
     if (globPath.endsWith('/build.js')) {
       if (callBuildFiles) await build(path.dirname(globPath))
-    } else groupFile(globPath)
+    } else groupFile(realGlobPath)
   }
 }
 global.groupGlob = _groupGlob

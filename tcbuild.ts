@@ -69,7 +69,6 @@ declare global {
   var groupFinalFlags: typeof _groupFinalFlags
   var groupFinalFlagsInputPattern: typeof _groupFinalFlagsInputPattern
   var groupFile: typeof _groupFile
-  var groupFileExecutable: typeof _groupFileExecutable
   var group: typeof _group
   var groupGlob: typeof _groupGlob
   //  var import: typeof _import
@@ -79,7 +78,7 @@ declare global {
 const contextStack: string[] = []
 
 async function _build(name: string = '', cb?: () => any) {
-  let prevStack = contextStack.join("/")
+  let prevStack = contextStack.join('/')
   if (name !== '') contextStack.push(name)
 
   if (cb) {
@@ -96,7 +95,7 @@ async function _build(name: string = '', cb?: () => any) {
       console.log("Can't load build.js, is file existing?")
       throw e
     } finally {
-       if (name !== '') contextStack.pop()
+      if (name !== '') contextStack.pop()
     }
   }
 }
@@ -112,7 +111,7 @@ type Group = {
       executable: string
       flags: string
       toBeRemoved: string[]
-      includeInFinalOutput: boolean | 'notconfigured'
+      includeInFinalOutput: boolean
     }
   >
   extFlags: StringKeyValue
@@ -215,12 +214,19 @@ function _groupFinalFlagsInputPattern(pattern: string) {
 }
 global.groupFinalFlagsInputPattern = _groupFinalFlagsInputPattern
 
-function _groupFile(
-  fileName: string,
-  flags?: string,
-  flagsToBeRemoved?: string | string[],
-  includeInFinalOutput?: boolean | 'notconfigured'
-): void {
+interface groupFileObj {
+  getFlags(): string
+  setFlags(flags: string): groupFileObj
+  appendFlags(flags?: string): groupFileObj
+  getFlagsToBeRemoved(): string[]
+  appendFlagsToBeRemoved(flagsToBeRemoved?: string | string[]): groupFileObj
+  getExecutable(): string
+  setExecutable(executable: string): groupFileObj
+  getIncludeInFinalOutput(): boolean
+  setIncludeInFinalOutput(includeInFinalOutput: boolean): groupFileObj
+}
+
+function _groupFile(fileName: string): groupFileObj {
   if (!currentGroup) throw 'any group function called outside of group'
   const file = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + fileName
   if (!path.resolve(path.join(process.cwd(), file)).startsWith(path.resolve(process.cwd())))
@@ -235,34 +241,51 @@ function _groupFile(
     }
   }
 
-  if (flags && flags.length > 0) currentGroupFile.flags += ` ${flags}`
-  if (flagsToBeRemoved && flagsToBeRemoved.length > 0) {
-    if (typeof flagsToBeRemoved === 'string') currentGroupFile.toBeRemoved.push(flagsToBeRemoved)
-    else if (Array.isArray(flagsToBeRemoved)) {
-      currentGroupFile.toBeRemoved.push(...flagsToBeRemoved)
-    } else {
-      throw 'What are you doing? ' + typeof flagsToBeRemoved
+  const self: groupFileObj = {
+    getFlags: () => {
+      return currentGroupFile.flags
+    },
+    setFlags: (flags: string) => {
+      if (flags && flags.length > 0) currentGroupFile.flags = flags
+      return self
+    },
+    appendFlags: (flags?: string) => {
+      if (flags && flags.length > 0) currentGroupFile.flags += ` ${flags}`
+      return self
+    },
+    getFlagsToBeRemoved: () => {
+      return currentGroupFile.toBeRemoved
+    },
+    appendFlagsToBeRemoved: (flagsToBeRemoved?: string | string[]) => {
+      if (flagsToBeRemoved && flagsToBeRemoved.length > 0) {
+        if (typeof flagsToBeRemoved === 'string')
+          currentGroupFile.toBeRemoved.push(flagsToBeRemoved)
+        else if (Array.isArray(flagsToBeRemoved)) {
+          currentGroupFile.toBeRemoved.push(...flagsToBeRemoved)
+        }
+      }
+      return self
+    },
+    getExecutable: () => {
+      return currentGroupFile.executable
+    },
+    setExecutable: (executable: string) => {
+      if (executable != undefined) currentGroupFile.executable = executable
+      return self
+    },
+    getIncludeInFinalOutput: () => {
+      return currentGroupFile.includeInFinalOutput
+    },
+    setIncludeInFinalOutput: (includeInFinalOutput: boolean) => {
+      if (includeInFinalOutput !== undefined)
+        currentGroupFile.includeInFinalOutput = includeInFinalOutput
+      return self
     }
   }
-  if (
-    currentGroupFile.includeInFinalOutput === 'notconfigured' &&
-    includeInFinalOutput !== 'notconfigured'
-  )
-    currentGroupFile.includeInFinalOutput = true
-  if (includeInFinalOutput !== undefined)
-    currentGroupFile.includeInFinalOutput = includeInFinalOutput
+
+  return self
 }
 global.groupFile = _groupFile
-
-function _groupFileExecutable(src: string, exec?: string) {
-  if (!currentGroup) throw 'any group function called outside of group'
-  const file = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + src
-  if (!currentGroup.files[file]) groupFile(src, '', '', 'notconfigured')
-  // @ts-ignore
-  if (exec) currentGroup.files[file].executable = exec
-  return currentGroup.files[file]?.executable ?? ''
-}
-global.groupFileExecutable = _groupFileExecutable
 
 async function _group(name: string | null, fn: () => void) {
   if (name && !groups[name])
@@ -293,18 +316,30 @@ async function _group(name: string | null, fn: () => void) {
 }
 global.group = _group
 
-async function _groupGlob(globXp: string, globOptions: any, callBuildFiles = false) {
+interface groupGlobOptions {
+  globOptions?: any
+  callBuildFiles?: boolean
+  cb?: (_: groupFileObj) => void
+}
+
+async function _groupGlob(globXp: string, options?: groupGlobOptions) {
   if (!currentGroup) throw 'any group function called outside of group'
 
-  const globbed = glob.globSync(globXp, { cwd: contextStack.join('/'), ...globOptions })
+  const globbed = glob.globSync(globXp, { cwd: contextStack.join('/'), ...options?.globOptions })
   for (let realGlobPath of globbed) {
     const globPath = path.join(contextStack.join('/'), realGlobPath)
     if (!fs.statSync(path.join(process.cwd(), globPath)).isFile()) continue
     if (!path.join(process.cwd(), globPath).startsWith(path.resolve(process.cwd())))
       console.error('glob outside of working directory: ' + globPath)
     if (globPath.endsWith('/build.js')) {
-      if (callBuildFiles) await build(path.dirname(globPath))
-    } else groupFile(realGlobPath)
+      if (options?.callBuildFiles === true) await build(path.dirname(globPath))
+    } else {
+      if (options?.cb) {
+        options?.cb(groupFile(realGlobPath))
+      } else {
+        groupFile(realGlobPath)
+      }
+    }
   }
 }
 global.groupGlob = _groupGlob
@@ -413,6 +448,7 @@ function linkNeedsRebuild(output: string, objects: readonly string[]): boolean {
 
 process.once('beforeExit', async () => {
   fs.mkdirSync(path.dirname(path.join(process.cwd(), build_dir)), { recursive: true })
+  const compileCommandsFiles: string[] = []
   for (const [name, group] of Object.entries(groups)) {
     const objects: string[] = []
 
@@ -441,11 +477,15 @@ process.once('beforeExit', async () => {
           globalExtExecutable[fileLastExt]
         const cmd = `${executable} ${objFlags.replaceAll('{in}', fileName).replaceAll('{out}', obj)}` // out and input handling
         if (!executable) {
-          console.log(fileName + ' is being skipped due to wrong confugruation')
+          console.log(fileName + ' skipped due to wrong confugruation')
           continue
         }
         console.log(cmd)
         execSync(cmd, { stdio: 'inherit' })
+        if (fs.existsSync(obj + '_compile_commands.json'))
+          compileCommandsFiles.push(
+            fs.readFileSync(obj + '_compile_commands.json', 'utf-8').toString()
+          )
       }
     }
 
@@ -462,6 +502,12 @@ process.once('beforeExit', async () => {
         stdio: 'inherit'
       })
     }
+  }
+  if (compileCommandsFiles.length > 0) {
+    let compileCommands = '['
+    for (const file of compileCommandsFiles) compileCommands += fs.readFileSync(file)
+    compileCommands += ']'
+    fs.writeFileSync(path.join(process.cwd(), build_dir, 'compile_commands.json'), compileCommands)
   }
 })
 

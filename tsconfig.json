@@ -5,10 +5,10 @@
     "types": ["node"],
     "declaration": true,
 
-    "noUncheckedIndexedAccess": true,
+    //"noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
 
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
   }
 }

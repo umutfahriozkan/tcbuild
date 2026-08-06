@@ -1,6 +1,6 @@
 {
   "name": "tcbuilder",
-  "version": "2.3.1",
+  "version": "2.4.2",
   "description": "Build System",
   "homepage": "https://github.com/umutfahriozkan/tcbuild#readme",
   "bugs": {
@@ -32,12 +32,15 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
+    "@types/react": "^19.2.17",
     "@typescript/native-preview": "7.0.0-dev.20260628.1"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "@types/blessed": "^0.1.27",
+    "blessed": "^0.1.81",
     "glob": "^13.0.6"
   }
 }

@@ -62,6 +62,7 @@ declare global {
   var extExecutable: typeof _extExecutable
   var extFlags: typeof _extFlags
   var extSuffix: typeof _extSuffix
+  var extIncludeInFinalOutput: typeof _extIncludeInFinalOutput
   var srcExecutable: typeof _srcExecutable
   var srcFlags: typeof _srcFlags
   var groupFinalExecutable: typeof _groupFinalExecutable
@@ -102,6 +103,7 @@ async function _build(name: string = '', cb?: () => any) {
 global.build = _build
 
 type StringKeyValue = Record<string, string>
+type StringKeyBooleanValue = Record<string, boolean>
 
 type Group = {
   name: string
@@ -117,6 +119,7 @@ type Group = {
   extFlags: StringKeyValue
   extExecutable: StringKeyValue
   extSuffix: StringKeyValue
+  extIncludeInFinalOutput: StringKeyBooleanValue
   finalFlags: string
   finalFlagsToBeRemoved: string[]
   finalExe: string
@@ -127,6 +130,7 @@ type Group = {
 const globalExtExecutable: StringKeyValue = {}
 const globalExtFlags: StringKeyValue = {}
 const globalExtSuffix: StringKeyValue = {}
+const globalExtIncludeInFinalOutput: StringKeyBooleanValue = {}
 const globalSrcExecutable: StringKeyValue = {}
 const globalSrcFlags: StringKeyValue = {}
 
@@ -158,6 +162,14 @@ function _extSuffix(ext: string, suffix?: string) {
   return assign[ext] ?? ''
 }
 global.extSuffix = _extSuffix
+
+function _extIncludeInFinalOutput(ext: string, include?: boolean) {
+  let assign = globalExtIncludeInFinalOutput
+  if (currentGroup !== null) assign = currentGroup.extIncludeInFinalOutput
+  if (include !== undefined) assign[ext] = include
+  return assign[ext] ?? true
+}
+global.extIncludeInFinalOutput = _extIncludeInFinalOutput
 
 function _srcExecutable(src: string, exec?: string) {
   if (currentGroup !== null) throw 'src function called inside group'
@@ -295,6 +307,7 @@ async function _group(name: string | null, fn: () => void) {
       extFlags: {},
       extExecutable: {},
       extSuffix: {},
+      extIncludeInFinalOutput: {},
       finalFlags: '',
       finalFlagsToBeRemoved: [],
       finalExe: '',
@@ -446,6 +459,16 @@ function linkNeedsRebuild(output: string, objects: readonly string[]): boolean {
   return false
 }
 
+function findExecutable(map: StringKeyValue | StringKeyBooleanValue, exts: string[], depth = -1): string | boolean | undefined {
+  const ext = exts.at(depth);
+
+  if (ext === undefined) {
+    return undefined;
+  }
+
+  return map[ext] ?? findExecutable(map, exts, depth - 1);
+}
+
 process.once('beforeExit', async () => {
   fs.mkdirSync(path.dirname(path.join(process.cwd(), build_dir)), { recursive: true })
   const compileCommandsFiles: string[] = []
@@ -453,16 +476,16 @@ process.once('beforeExit', async () => {
     const objects: string[] = []
 
     for (const [fileName, file] of Object.entries(group.files)) {
-      const fileLastExt = fileName.split('.').pop()!
+      const fileExts = fileName.split('.').slice(1)
 
-      const suffix = globalExtSuffix[fileLastExt] ?? group.extSuffix[fileLastExt]
+      const suffix = findExecutable(group.extSuffix, fileExts) ?? findExecutable(globalExtSuffix, fileExts);
       const obj = `${build_dir}/${fileName}${suffix ? `.${suffix}` : ''}`
-      if (file.includeInFinalOutput === true) objects.push(obj)
+      if ((file.includeInFinalOutput || findExecutable(group.extIncludeInFinalOutput, fileExts) || findExecutable(globalExtIncludeInFinalOutput, fileExts)) === true) objects.push(obj)
       if (needsRebuild(fileName, obj)) {
         fs.mkdirSync(path.dirname(path.join(process.cwd(), obj)), { recursive: true })
 
         let objFlags = `${globalSrcFlags[fileName] ?? ''} ${file.flags ?? ''}`
-        for (const ext of fileName.split('.').slice(1)) {
+        for (const ext of fileExts) {
           if (ext.length > 0)
             objFlags += ` ${globalExtFlags[ext] ?? ''} ${group.extFlags[ext] ?? ''}`
         }
@@ -473,20 +496,18 @@ process.once('beforeExit', async () => {
         const executable =
           (file.executable.length > 0 ? file.executable : undefined) ||
           globalSrcExecutable[fileName] ||
-          group.extExecutable[fileLastExt] ||
-          globalExtExecutable[fileLastExt]
+          findExecutable(group.extExecutable, fileExts) ||
+          findExecutable(globalExtExecutable, fileExts)
         const cmd = `${executable} ${objFlags.replaceAll('{in}', fileName).replaceAll('{out}', obj)}` // out and input handling
         if (!executable) {
-          console.log(fileName + ' skipped due to wrong confugruation')
+          console.log(fileName + ' skipped due to wrong configuration')
           continue
         }
         console.log(cmd)
         execSync(cmd, { stdio: 'inherit' })
-        if (fs.existsSync(obj + '_compile_commands.json'))
-          compileCommandsFiles.push(
-            fs.readFileSync(obj + '_compile_commands.json', 'utf-8').toString()
-          )
       }
+      if (fs.existsSync(obj + '_compile_commands.json'))
+        compileCommandsFiles.push(obj + '_compile_commands.json')
     }
 
     const finalOutName = `${build_dir}/${name}${group.finalExeSuffix ? `.${group.finalExeSuffix}` : ``}`

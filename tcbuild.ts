@@ -102,6 +102,12 @@ async function _build(name: string = '', cb?: () => any) {
 }
 global.build = _build
 
+type Flags = {
+  flag: string
+  sort: number
+}
+
+type ExtFlags = Record<string, Flags[]>
 type StringKeyValue = Record<string, string>
 type StringKeyBooleanValue = Record<string, boolean>
 
@@ -111,16 +117,16 @@ type Group = {
     string,
     {
       executable: string
-      flags: string
+      flags: Flags[]
       toBeRemoved: string[]
       includeInFinalOutput: boolean
     }
   >
-  extFlags: StringKeyValue
+  extFlags: ExtFlags
   extExecutable: StringKeyValue
   extSuffix: StringKeyValue
   extIncludeInFinalOutput: StringKeyBooleanValue
-  finalFlags: string
+  finalFlags: Flags[]
   finalFlagsToBeRemoved: string[]
   finalExe: string
   finalExeSuffix: string
@@ -128,11 +134,11 @@ type Group = {
 }
 
 const globalExtExecutable: StringKeyValue = {}
-const globalExtFlags: StringKeyValue = {}
+const globalExtFlags: ExtFlags = {}
 const globalExtSuffix: StringKeyValue = {}
 const globalExtIncludeInFinalOutput: StringKeyBooleanValue = {}
 const globalSrcExecutable: StringKeyValue = {}
-const globalSrcFlags: StringKeyValue = {}
+const globalSrcFlags: Record<string, Flags[]> = {}
 
 const groups: Record<string, Group> = {}
 let currentGroup: Group | null = null
@@ -146,12 +152,23 @@ function _extExecutable(ext: string, exec?: string) {
 }
 global.extExecutable = _extExecutable
 
-function _extFlags(ext: string, flags?: string) {
+function _extFlags(ext: string, flag?: string | Flags[], sort = 0) {
   let assign = globalExtFlags
   if (currentGroup !== null) assign = currentGroup.extFlags
+
+  if(flag && flag.length > 0) {
+  if (!assign[ext]) assign[ext] = [];
+  if(Array.isArray(flag)) {
+    assign[ext].push(...flag);
+  } else
+    assign[ext].push({ flag, sort });
+  }
+  return assign[ext]
+  /*
   if (!assign[ext]) assign[ext] = ''
   if (flags && flags.length > 0) assign[ext] += ` ${flags}`
   return assign[ext] ?? ''
+  */
 }
 global.extFlags = _extFlags
 
@@ -179,19 +196,20 @@ function _srcExecutable(src: string, exec?: string) {
 }
 global.srcExecutable = _srcExecutable
 
-function _srcFlags(src: string, flags?: string) {
+function _srcFlags(src: string, flag?: string, sort = 0) {
   if (currentGroup !== null) throw 'src function called inside group'
   const srcName = contextStack.join('/') + (contextStack.length > 0 ? '/' : '') + src
-  if (!globalSrcFlags[srcName]) globalSrcFlags[srcName] = ''
-  if (flags && flags.length > 0) globalSrcFlags[srcName] += ` ${flags}`
-  return globalSrcFlags[srcName] ?? ''
+
+  if (!globalSrcFlags[srcName]) globalSrcFlags[srcName] = []
+  if (flag && flag.length > 0) globalSrcFlags[srcName].push({ flag, sort })
+  return globalSrcFlags[srcName]
 }
 global.srcFlags = _srcFlags
 
-function _groupFinalFlags(flags: string, toBeRemoved: string | string[]) {
+function _groupFinalFlags(flag: string, toBeRemoved: string | string[], sort = 0) {
   if (!currentGroup) throw 'any group function called outside of group'
-  if (flags) {
-    if (flags.length > 0) currentGroup.finalFlags += ` ${flags}`
+  if (flag) {
+    if (flag.length > 0) currentGroup.finalFlags.push({ flag, sort })
     if (toBeRemoved) {
       if (typeof toBeRemoved === 'string') currentGroup.finalFlagsToBeRemoved.push(toBeRemoved)
       else if (Array.isArray(toBeRemoved)) {
@@ -227,9 +245,9 @@ function _groupFinalFlagsInputPattern(pattern: string) {
 global.groupFinalFlagsInputPattern = _groupFinalFlagsInputPattern
 
 interface groupFileObj {
-  getFlags(): string
-  setFlags(flags: string): groupFileObj
-  appendFlags(flags?: string): groupFileObj
+  getFlags(): Flags[]
+  //setFlags(flags: string): groupFileObj
+  appendFlags(flags?: string, sort?: number): groupFileObj
   getFlagsToBeRemoved(): string[]
   appendFlagsToBeRemoved(flagsToBeRemoved?: string | string[]): groupFileObj
   getExecutable(): string
@@ -247,7 +265,7 @@ function _groupFile(fileName: string): groupFileObj {
   if (!currentGroupFile) {
     currentGroup.files[file] = currentGroupFile = {
       executable: '',
-      flags: '',
+      flags: [],
       toBeRemoved: [],
       includeInFinalOutput: true
     }
@@ -257,12 +275,14 @@ function _groupFile(fileName: string): groupFileObj {
     getFlags: () => {
       return currentGroupFile.flags
     },
-    setFlags: (flags: string) => {
-      if (flags && flags.length > 0) currentGroupFile.flags = flags
+    /*
+    setFlags: (flag: string, sort = 0) => {
+      if (flag && flag.length > 0) currentGroupFile.flags = [{ flag, sort }]
       return self
     },
-    appendFlags: (flags?: string) => {
-      if (flags && flags.length > 0) currentGroupFile.flags += ` ${flags}`
+    */
+    appendFlags: (flag?: string, sort = 0) => {
+      if (flag && flag.length > 0) currentGroupFile.flags.push({ flag, sort })
       return self
     },
     getFlagsToBeRemoved: () => {
@@ -308,7 +328,7 @@ async function _group(name: string | null, fn: () => void) {
       extExecutable: {},
       extSuffix: {},
       extIncludeInFinalOutput: {},
-      finalFlags: '',
+      finalFlags: [],
       finalFlagsToBeRemoved: [],
       finalExe: '',
       finalExeSuffix: '',
@@ -484,11 +504,19 @@ process.once('beforeExit', async () => {
       if (needsRebuild(fileName, obj)) {
         fs.mkdirSync(path.dirname(path.join(process.cwd(), obj)), { recursive: true })
 
-        let objFlags = `${globalSrcFlags[fileName] ?? ''} ${file.flags ?? ''}`
+        const flagsArray: Flags[] = []
+
+        flagsArray.push(...(globalSrcFlags[fileName] ?? []));
+        flagsArray.push(...(file.flags ?? []));
+
         for (const ext of fileExts) {
-          if (ext.length > 0)
-            objFlags += ` ${globalExtFlags[ext] ?? ''} ${group.extFlags[ext] ?? ''}`
+          if (ext.length > 0) {
+            flagsArray.push(...(globalExtFlags[ext] ?? []));
+            flagsArray.push(...(group.extFlags[ext] ?? []));
+          }
         }
+
+        let objFlags = flagsArray.sort((a, b) => a.sort - b.sort).join(" ")
 
         if (file.toBeRemoved.length > 0)
           for (const remove of file.toBeRemoved) objFlags = objFlags.replaceAll(remove, '')
@@ -512,7 +540,7 @@ process.once('beforeExit', async () => {
 
     const finalOutName = `${build_dir}/${name}${group.finalExeSuffix ? `.${group.finalExeSuffix}` : ``}`
     if (group.finalExe.length > 0 && linkNeedsRebuild(finalOutName, objects)) {
-      let finalFlags = group.finalFlags
+      let finalFlags = group.finalFlags.sort((a, b) => a.sort - b.sort).join(" ")
       if (group.finalFlagsToBeRemoved.length > 0)
         for (const remove of group.finalFlagsToBeRemoved)
           finalFlags = finalFlags.replaceAll(remove, '')

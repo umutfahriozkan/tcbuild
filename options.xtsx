@@ -1,0 +1,540 @@
+import React, { useEffect, useState } from 'react'
+import { Box, Text, render, useInput, useStdout } from 'ink'
+
+/* -------------------------------------------------------------------------- */
+/* Model                                                                      */
+/* -------------------------------------------------------------------------- */
+
+type Node = MenuNode | BoolNode | RadioNode
+
+interface MenuNode {
+  type: 'menu'
+  title: string
+  children: Node[]
+}
+
+interface BoolNode {
+  type: 'bool'
+  title: string
+  value: boolean
+}
+
+interface RadioNode {
+  type: 'radio'
+  title: string
+  group: string
+  value: boolean
+}
+
+/* -------------------------------------------------------------------------- */
+/* Configuration                                                              */
+/* -------------------------------------------------------------------------- */
+
+const root: MenuNode = {
+  type: 'menu',
+  title: 'Main Menu',
+
+  children: [
+    {
+      type: 'bool',
+      title: '64-bit kernel',
+      value: true
+    },
+
+    {
+      type: 'menu',
+      title: 'General setup',
+      children: [
+        {
+          type: 'bool',
+          title: 'Enable Logging',
+          value: true
+        },
+        {
+          type: 'bool',
+          title: 'Verbose Output',
+          value: false
+        },
+        {
+          type: 'menu',
+          title: 'System Features',
+          children: [
+            {
+              type: 'bool',
+              title: 'ACPI Support',
+              value: true
+            },
+            {
+              type: 'bool',
+              title: 'Power Management',
+              value: false
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      type: 'bool',
+      title: 'Enable loadable module support',
+      value: true
+    },
+
+    {
+      type: 'menu',
+      title: 'Processor type and features',
+      children: []
+    },
+
+    {
+      type: 'menu',
+      title: 'Power management and ACPI options',
+      children: []
+    },
+
+    {
+      type: 'menu',
+      title: 'Bus options (PCI etc.)',
+      children: []
+    },
+
+    {
+      type: 'menu',
+      title: 'Executable file formats / Emulations',
+      children: []
+    },
+
+    {
+      type: 'bool',
+      title: 'Networking support',
+      value: true
+    },
+
+    {
+      type: 'menu',
+      title: 'Device Drivers',
+      children: []
+    },
+
+    {
+      type: 'menu',
+      title: 'Firmware Drivers',
+      children: []
+    },
+
+    {
+      type: 'menu',
+      title: 'File systems',
+      children: []
+    },
+
+    {
+      type: 'menu',
+      title: 'Kernel hacking',
+      children: []
+    },
+
+    {
+      type: 'menu',
+      title: 'Security options',
+      children: []
+    },
+
+    {
+      type: 'menu',
+      title: 'Cryptographic API',
+      children: []
+    },
+
+    {
+      type: 'bool',
+      title: 'Virtualization',
+      value: true
+    },
+
+    {
+      type: 'menu',
+      title: 'Library routines',
+      children: []
+    }
+  ]
+}
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function indicator(node: Node): string {
+  switch (node.type) {
+    case 'bool':
+      return node.value ? '[*] ' : '[ ] '
+
+    case 'radio':
+      return node.value ? '(*) ' : '( ) '
+
+    case 'menu':
+      return '    '
+  }
+}
+
+function nodeText(node: Node): string {
+  return indicator(node) + node.title + (node.type === 'menu' ? ' --->' : '')
+}
+
+/* -------------------------------------------------------------------------- */
+/* App                                                                        */
+/* -------------------------------------------------------------------------- */
+
+interface MenuState {
+  menu: MenuNode
+  cursor: number
+  scroll: number
+}
+
+function App() {
+  const { stdout } = useStdout()
+
+  const [terminal, setTerminal] = useState({
+    width: stdout.columns ?? 80,
+    height: stdout.rows ?? 24
+  })
+
+  const [stack, setStack] = useState<MenuState[]>([
+    {
+      menu: root,
+      cursor: 0,
+      scroll: 0
+    }
+  ])
+
+  const [, redraw] = useState(0)
+
+  const current = stack[stack.length - 1]
+
+  /* ---------------------------------------------------------------------- */
+  /* Resize                                                                 */
+  /* ---------------------------------------------------------------------- */
+
+  useEffect(() => {
+    const onResize = () => {
+      setTerminal({
+        width: stdout.columns ?? 80,
+        height: stdout.rows ?? 24
+      })
+    }
+
+    stdout.on('resize', onResize)
+
+    return () => {
+      stdout.off('resize', onResize)
+    }
+  }, [stdout])
+
+  /* ---------------------------------------------------------------------- */
+  /* Dimensions                                                             */
+  /* ---------------------------------------------------------------------- */
+
+  const width = terminal.width
+  const height = terminal.height
+
+  /*
+   * Don't allow the content to extend past the frame.
+   *
+   * Border occupies one cell on every side.
+   */
+
+  const contentWidth = Math.max(1, width - 2)
+  const contentHeight = Math.max(1, height - 2)
+
+  /*
+   * Footer takes one row.
+   */
+
+  const menuHeight = Math.max(1, contentHeight - 2)
+
+  /*
+   * Width of centered menu.
+   */
+
+  const menuWidth = Math.min(90, Math.max(40, contentWidth - 10))
+
+  /* ---------------------------------------------------------------------- */
+  /* Scrolling                                                              */
+  /* ---------------------------------------------------------------------- */
+
+  function ensureVisible(state: MenuState) {
+    if (state.cursor < state.scroll) {
+      state.scroll = state.cursor
+    }
+
+    if (state.cursor >= state.scroll + menuHeight) {
+      state.scroll = state.cursor - menuHeight + 1
+    }
+
+    const maxScroll = Math.max(0, state.menu.children.length - menuHeight)
+
+    state.scroll = Math.min(state.scroll, maxScroll)
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Navigation                                                             */
+  /* ---------------------------------------------------------------------- */
+
+  function moveCursor(delta: number) {
+    if (current.menu.children.length === 0) return
+
+    current.cursor = Math.max(0, Math.min(current.menu.children.length - 1, current.cursor + delta))
+
+    ensureVisible(current)
+
+    setStack([...stack])
+  }
+
+  function activate() {
+    const node = current.menu.children[current.cursor]
+
+    if (!node) return
+
+    if (node.type === 'menu') {
+      setStack([
+        ...stack,
+        {
+          menu: node,
+          cursor: 0,
+          scroll: 0
+        }
+      ])
+
+      return
+    }
+
+    if (node.type === 'bool') {
+      node.value = !node.value
+      redraw(x => x + 1)
+      return
+    }
+
+    setRadio(node)
+    redraw(x => x + 1)
+  }
+
+  function back() {
+    if (stack.length <= 1) return
+
+    setStack(stack.slice(0, -1))
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Radio                                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  function setRadio(node: RadioNode) {
+    function walk(menu: MenuNode) {
+      for (const child of menu.children) {
+        if (child.type === 'radio' && child.group === node.group) {
+          child.value = false
+        }
+
+        if (child.type === 'menu') {
+          walk(child)
+        }
+      }
+    }
+
+    walk(root)
+
+    node.value = true
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Keyboard                                                               */
+  /* ---------------------------------------------------------------------- */
+
+  useInput((input, key) => {
+    if (key.upArrow) {
+      moveCursor(-1)
+      return
+    }
+
+    if (key.downArrow) {
+      moveCursor(1)
+      return
+    }
+
+    if (key.return || key.rightArrow || input === ' ') {
+      activate()
+      return
+    }
+
+    if (key.leftArrow || key.escape) {
+      back()
+      return
+    }
+
+    if (
+      // @ts-ignore
+      key.f10 ||
+      input === 'q'
+    ) {
+      process.exit(0)
+    }
+  })
+
+  /* ---------------------------------------------------------------------- */
+  /* Visible items                                                          */
+  /* ---------------------------------------------------------------------- */
+
+  const items = current.menu.children.slice(current.scroll, current.scroll + menuHeight)
+
+  /* ---------------------------------------------------------------------- */
+  /* Frame                                                                  */
+  /* ---------------------------------------------------------------------- */
+
+  return (
+    <Box
+      width={terminal.width}
+      height={terminal.height}
+      borderStyle="single"
+      borderColor="yellow"
+      flexDirection="column"
+    >
+      {/* -------------------------------------------------------------- */}
+      {/* Title overlay                                                   */}
+      {/* -------------------------------------------------------------- */}
+
+      <Box position="absolute" top={-1} left={2}>
+        <Text color="green" bold>
+          {current.menu.title}
+        </Text>
+      </Box>
+
+      {/* -------------------------------------------------------------- */}
+      {/* Menu area                                                       */}
+      {/* -------------------------------------------------------------- */}
+
+      <Box flexGrow={1} alignItems="center" justifyContent="center">
+        <Box width={menuWidth} flexDirection="column">
+          {items.map((node, index) => {
+            const actualIndex = current.scroll + index
+
+            const selected = actualIndex === current.cursor
+
+            const text = nodeText(node)
+
+            const maxWidth = menuWidth - 2
+
+            const display = text.length > maxWidth ? text.slice(0, maxWidth - 1) + '…' : text
+
+            return (
+              <Box key={actualIndex} width={menuWidth} height={1}>
+                <Text inverse={selected}>
+                  {selected ? ` ${display.padEnd(maxWidth)} ` : ` ${display}`}
+                </Text>
+              </Box>
+            )
+          })}
+        </Box>
+      </Box>
+
+      {/* -------------------------------------------------------------- */}
+      {/* Footer                                                          */}
+      {/* -------------------------------------------------------------- */}
+
+      <Box position="absolute" bottom={-1} left={1} height={1} width={terminal.width}>
+        <Text>
+          <Text color="white" bold>
+            F1
+          </Text>
+          <Text color="yellow" inverse>
+            Help
+          </Text>
+          <Text color="yellow">─</Text>
+          <Text color="white" bold>
+            F2
+          </Text>
+          <Text color="yellow" inverse>
+            SymInfo
+          </Text>
+          <Text color="yellow">─</Text>
+          <Text color="white" bold>
+            F3
+          </Text>
+          <Text color="yellow" inverse>
+            Help 2
+          </Text>
+          <Text color="yellow">─</Text>
+          <Text color="white" bold>
+            F4
+          </Text>
+          <Text color="yellow" inverse>
+            ShowAll
+          </Text>
+          <Text color="yellow">─</Text>
+          <Text color="white" bold>
+            F5
+          </Text>
+          <Text color="yellow" inverse>
+            Back
+          </Text>
+          <Text color="yellow">─</Text>
+          <Text color="white" bold>
+            F6
+          </Text>
+          <Text color="yellow" inverse>
+            Save
+          </Text>
+          <Text color="yellow">─</Text>
+          <Text color="white" bold>
+            F7
+          </Text>
+          <Text color="yellow" inverse>
+            Load
+          </Text>
+          <Text color="yellow">─</Text>
+          <Text color="white" bold>
+            F8
+          </Text>
+          <Text color="yellow" inverse>
+            SymSearch
+          </Text>
+          <Text color="yellow">─</Text>
+          <Text color="white" bold>
+            F9
+          </Text>
+          <Text color="yellow" inverse>
+            Exit
+          </Text>
+        </Text>
+      </Box>
+    </Box>
+  )
+}
+
+enterTerminalMode()
+
+const instance = render(<App />)
+
+process.on('SIGTERM', () => {
+  instance.unmount()
+  leaveTerminalMode()
+  process.exit(130)
+})
+
+function enterTerminalMode() {
+  // Alternate screen
+  process.stdout.write('\x1b[?1049h')
+
+  // Clear screen
+  process.stdout.write('\x1b[2J\x1b[H')
+
+  // Disable line wrapping
+  process.stdout.write('\x1b[?7l')
+}
+
+function leaveTerminalMode() {
+  // Restore line wrapping
+  process.stdout.write('\x1b[?7h')
+
+  // Restore normal screen
+  process.stdout.write('\x1b[?1049l')
+}

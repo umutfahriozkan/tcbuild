@@ -73,6 +73,8 @@ declare global {
   var group: typeof _group
   var groupGlob: typeof _groupGlob
   //  var import: typeof _import
+
+  var needsRebuild: typeof _needsRebuild
 }
 //console.info('INFO: Current build mode: ' + (is_debug ? 'debug' : 'release'))
 
@@ -421,7 +423,7 @@ async function _groupGlob(globXp: string, options?: groupGlobOptions) {
     if (!path.join(process.cwd(), globPath).startsWith(path.resolve(process.cwd())))
       console.error('glob outside of working directory: ' + globPath)
     if (globPath.endsWith('/build.js')) {
-      if (options?.callBuildFiles === true) await build(path.dirname(globPath))
+      if (options?.callBuildFiles === true) await build(path.dirname(realGlobPath))
     } else {
       if (options?.cb) {
         options?.cb(groupFile(realGlobPath))
@@ -488,9 +490,7 @@ build() // Now build the tree
 // #endregion
 
 // #region Runtime
-function needsRebuild(src: string, obj: string): boolean {
-  src = path.join(process.cwd(), src)
-  obj = path.join(process.cwd(), obj)
+function _needsRebuild(src: string, obj: string): boolean {
   if (!fs.existsSync(src)) throw new Error(`${src} does not existis!`)
   if (!fs.existsSync(obj)) return true
 
@@ -521,6 +521,8 @@ function needsRebuild(src: string, obj: string): boolean {
   }
   return false
 }
+global.needsRebuild = _needsRebuild
+
 
 function linkNeedsRebuild(output: string, objects: readonly string[]): boolean {
   output = path.join(process.cwd(), output)
@@ -567,7 +569,7 @@ process.once('beforeExit', async () => {
           findExecutable(globalExtIncludeInFinalOutput, fileExts)) === true
       )
         objects.push(obj)
-      if (needsRebuild(fileName, obj)) {
+      if (needsRebuild(path.join(process.cwd(), fileName), path.join(process.cwd(), obj))) {
         fs.mkdirSync(path.dirname(path.join(process.cwd(), obj)), { recursive: true })
 
         const flagsArray: Flags[] = []

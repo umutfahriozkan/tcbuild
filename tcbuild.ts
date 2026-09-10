@@ -122,6 +122,7 @@ type Group = {
       flags: Flags[]
       toBeRemoved: string[]
       includeInFinalOutput: boolean
+      depends: string[]
     }
   >
   extFlags: ExtFlags
@@ -133,6 +134,7 @@ type Group = {
   finalExe: string
   finalExeSuffix: string
   finalInputPattern: string
+  finalFlagsGenCb?: ((group: Group, objects: string[], finalFlags: string) => string) | undefined
 }
 
 const globalExtExecutable: StringKeyValue = {}
@@ -293,6 +295,7 @@ function _groupFinalFlagsInputPattern(pattern: string) {
 global.groupFinalFlagsInputPattern = _groupFinalFlagsInputPattern
 
 interface groupFileObj {
+  setDepends(depends: string[]): groupFileObj
   getFlags(): Flags[]
   setFlags(flags: string | Flags[]): groupFileObj
   appendFlags(flags?: string | Flags[], sort?: number): groupFileObj
@@ -315,11 +318,16 @@ function _groupFile(fileName: string): groupFileObj {
       executable: '',
       flags: [],
       toBeRemoved: [],
-      includeInFinalOutput: true
+      includeInFinalOutput: true,
+      depends: []
     }
   }
 
   const self: groupFileObj = {
+    setDepends: (depends: string[]) => {
+      currentGroupFile.depends = depends;
+      return self;
+    },
     getFlags: () => {
       return currentGroupFile.flags
     },
@@ -377,7 +385,11 @@ function _groupFile(fileName: string): groupFileObj {
 }
 global.groupFile = _groupFile
 
-async function _group(name: string | null, fn: () => void) {
+async function _group(
+  name: string | null,
+  fn: () => void,
+  finalFlagsGenCb?: (group: Group, objects: string[], finalFlags: string) => string
+) {
   if (name && !groups[name])
     groups[name] = {
       name,
@@ -390,7 +402,8 @@ async function _group(name: string | null, fn: () => void) {
       //finalFlagsToBeRemoved: [],
       finalExe: '',
       finalExeSuffix: '',
-      finalInputPattern: '{in}'
+      finalInputPattern: '{in}',
+      finalFlagsGenCb
     }
 
   if (!name) {
@@ -490,39 +503,48 @@ build() // Now build the tree
 // #endregion
 
 // #region Runtime
-function _needsRebuild(src: string, obj: string): boolean {
+function _needsRebuild(src: string, obj: string, depends: string[]): boolean {
   if (!fs.existsSync(src)) throw new Error(`${src} does not existis!`)
   if (!fs.existsSync(obj)) return true
 
   const srcTime = fs.statSync(src).mtimeMs
   const objTime = fs.statSync(obj).mtimeMs
 
-  if (srcTime > objTime) return true
+  if (srcTime > objTime) return true;
+  {
+    const dep = obj + '.d'
+    if (fs.existsSync(dep)) {
+      const depText = fs
+        .readFileSync(dep, 'utf-8')
+        .toString()
+        .replace(/\\\r?\n/g, ' ')
+      const depColon = depText.indexOf(':')
+      if (depColon !== -1) {
+        const deps = depText
+          .slice(depColon + 1)
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean)
 
-  const dep = obj + '.d'
-  if (fs.existsSync(dep)) {
-    const depText = fs
-      .readFileSync(dep, 'utf-8')
-      .toString()
-      .replace(/\\\r?\n/g, ' ')
-    const depColon = depText.indexOf(':')
-    if (depColon !== -1) {
-      const deps = depText
-        .slice(depColon + 1)
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-
-      for (const dep of deps) {
-        if (!fs.existsSync(dep)) return true
-        if (fs.statSync(dep).mtimeMs > objTime) return true
+        for (const dep of deps) {
+          if (!fs.existsSync(dep)) return true
+          if (fs.statSync(dep).mtimeMs > objTime) return true
+        }
+      }
+    }
+  };
+  if (depends) {
+    if (Array.isArray(depends) && depends.length > 0) {
+      for (const dep of depends) {
+        if(!fs.existsSync(dep)) return true;
+        if (fs.statSync(dep).mtimeMs > objTime) return true;
       }
     }
   }
+
   return false
 }
 global.needsRebuild = _needsRebuild
-
 
 function linkNeedsRebuild(output: string, objects: readonly string[]): boolean {
   output = path.join(process.cwd(), output)
@@ -569,7 +591,13 @@ process.once('beforeExit', async () => {
           findExecutable(globalExtIncludeInFinalOutput, fileExts)) === true
       )
         objects.push(obj)
-      if (needsRebuild(path.join(process.cwd(), fileName), path.join(process.cwd(), obj))) {
+      if (
+        needsRebuild(
+          path.join(process.cwd(), fileName),
+          path.join(process.cwd(), obj),
+          file.depends
+        )
+      ) {
         fs.mkdirSync(path.dirname(path.join(process.cwd(), obj)), { recursive: true })
 
         const flagsArray: Flags[] = []
@@ -619,7 +647,7 @@ process.once('beforeExit', async () => {
         for (const remove of group.finalFlagsToBeRemoved)
           finalFlags = finalFlags.replaceAll(remove, '')*/
 
-      const cmd = `${group.finalExe} ${finalFlags.replaceAll('{out}', finalOutName).replaceAll('{in}', objects.map(x => group.finalInputPattern.replaceAll('{in}', x)).join(' '))}`
+      const cmd = `${group.finalExe} ${(group.finalFlagsGenCb ? group.finalFlagsGenCb(group, objects, finalFlags) : finalFlags).replaceAll('{out}', finalOutName).replaceAll('{in}', objects.map(x => group.finalInputPattern.replaceAll('{in}', x)).join(' '))}`
       console.log(cmd)
       execSync(cmd, {
         stdio: 'inherit'
@@ -632,6 +660,8 @@ process.once('beforeExit', async () => {
     compileCommands += ']'
     fs.writeFileSync(path.join(process.cwd(), build_dir, 'compile_commands.json'), compileCommands)
   }
+  // @ts-ignore
+  if(global["post_compile"]) post_compile();
 })
 
 // #endregion

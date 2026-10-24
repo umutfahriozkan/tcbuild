@@ -1,5 +1,6 @@
 {
-    "files.exclude": {
+    "js/ts.experimental.useTsgo": true,
+    "filesexclude": {
         "tsconfig.json": true,
         "pnpm-lock.yaml": true,
         ".vscode": true,

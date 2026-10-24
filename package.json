@@ -1,6 +1,6 @@
 {
   "name": "tcbuilder",
-  "version": "2.8.4",
+  "version": "2.11.3",
   "description": "Build System",
   "homepage": "https://github.com/umutfahriozkan/tcbuild#readme",
   "bugs": {
@@ -28,19 +28,17 @@
   },
   "types": "./dist/tcbuild.d.ts",
   "scripts": {
-    "prepack": "tsgo"
+    "prepack": "tsc"
   },
   "devDependencies": {
-    "@types/node": "^26.0.1",
-    "@types/react": "^19.2.17",
-    "@typescript/native-preview": "7.0.0-dev.20260628.1"
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "@types/blessed": "^0.1.27",
-    "blessed": "^0.1.81",
     "glob": "^13.0.6",
     "ink": "^7.1.1"
   }

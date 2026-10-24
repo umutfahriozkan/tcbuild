@@ -65,6 +65,7 @@ declare global {
   var extIncludeInFinalOutput: typeof _extIncludeInFinalOutput
   var srcExecutable: typeof _srcExecutable
   var srcFlags: typeof _srcFlags
+  var groupFinalFlagsGenCb: typeof _groupFinalFlagsGenCb
   var groupFinalExecutable: typeof _groupFinalExecutable
   var groupFinalExecutableSuffix: typeof _groupFinalExecutableSuffix
   var groupFinalFlags: typeof _groupFinalFlags
@@ -123,6 +124,9 @@ type Group = {
       toBeRemoved: string[]
       includeInFinalOutput: boolean
       depends: string[]
+      extraSuffixes: string[] | string[][]
+      appendFlagsFromExtraSuffixes: boolean
+      outPath?: string | undefined
     }
   >
   extFlags: ExtFlags
@@ -175,11 +179,6 @@ function _extFlags(ext: string | string[], flag?: string | Flags[], sort = 0) {
     } else assign[ext].push({ flag, sort })
   }
   return assign[ext]
-  /*
-  if (!assign[ext]) assign[ext] = ''
-  if (flags && flags.length > 0) assign[ext] += ` ${flags}`
-  return assign[ext] ?? ''
-  */
 }
 global.extFlags = _extFlags
 
@@ -294,7 +293,17 @@ function _groupFinalFlagsInputPattern(pattern: string) {
 }
 global.groupFinalFlagsInputPattern = _groupFinalFlagsInputPattern
 
+function _groupFinalFlagsGenCb(cb: Group['finalFlagsGenCb']) {
+  if (!currentGroup) throw 'any group function called outside of group'
+  if (cb) currentGroup.finalFlagsGenCb = cb
+  return currentGroup.finalFlagsGenCb
+}
+global.groupFinalFlagsGenCb = _groupFinalFlagsGenCb
+
 interface groupFileObj {
+  appendFlagsFromExtraSuffixes(bool: boolean): groupFileObj
+  setOutPath(path?: string | undefined): groupFileObj
+  setExtraSuffixes(suffixes?: string[] | string[][]): groupFileObj
   setDepends(depends: string[]): groupFileObj
   getFlags(): Flags[]
   setFlags(flags: string | Flags[]): groupFileObj
@@ -319,19 +328,33 @@ function _groupFile(fileName: string): groupFileObj {
       flags: [],
       toBeRemoved: [],
       includeInFinalOutput: true,
-      depends: []
+      depends: [],
+      extraSuffixes: [],
+      appendFlagsFromExtraSuffixes: false
     }
   }
 
   const self: groupFileObj = {
-    setDepends: (depends: string[]) => {
-      currentGroupFile.depends = depends;
-      return self;
+    appendFlagsFromExtraSuffixes(bool) {
+      currentGroupFile.appendFlagsFromExtraSuffixes = bool
+      return self
+    },
+    setExtraSuffixes(suffixes) {
+      if (suffixes) currentGroupFile.extraSuffixes = suffixes
+      return self
+    },
+    setOutPath: path => {
+      currentGroupFile.outPath = path
+      return self
+    },
+    setDepends: depends => {
+      currentGroupFile.depends = depends
+      return self
     },
     getFlags: () => {
       return currentGroupFile.flags
     },
-    setFlags: (flag: string | Flags[], sort = 0) => {
+    setFlags: (flag, sort = 0) => {
       if (flag && flag.length > 0) {
         if (Array.isArray(flag)) {
           currentGroupFile.flags = flag
@@ -341,7 +364,7 @@ function _groupFile(fileName: string): groupFileObj {
       }
       return self
     },
-    appendFlags: (flag?: string | Flags[], sort = 0) => {
+    appendFlags: (flag, sort = 0) => {
       if (flag && flag.length > 0) {
         if (Array.isArray(flag)) {
           currentGroupFile.flags.push(...flag)
@@ -354,7 +377,7 @@ function _groupFile(fileName: string): groupFileObj {
     getFlagsToBeRemoved: () => {
       return currentGroupFile.toBeRemoved
     },
-    appendFlagsToBeRemoved: (flagsToBeRemoved?: string | string[]) => {
+    appendFlagsToBeRemoved: flagsToBeRemoved => {
       if (flagsToBeRemoved && flagsToBeRemoved.length > 0) {
         if (typeof flagsToBeRemoved === 'string')
           currentGroupFile.toBeRemoved.push(flagsToBeRemoved)
@@ -367,14 +390,14 @@ function _groupFile(fileName: string): groupFileObj {
     getExecutable: () => {
       return currentGroupFile.executable
     },
-    setExecutable: (executable: string) => {
+    setExecutable: executable => {
       if (executable != undefined) currentGroupFile.executable = executable
       return self
     },
     getIncludeInFinalOutput: () => {
       return currentGroupFile.includeInFinalOutput
     },
-    setIncludeInFinalOutput: (includeInFinalOutput: boolean) => {
+    setIncludeInFinalOutput: includeInFinalOutput => {
       if (includeInFinalOutput !== undefined)
         currentGroupFile.includeInFinalOutput = includeInFinalOutput
       return self
@@ -385,11 +408,7 @@ function _groupFile(fileName: string): groupFileObj {
 }
 global.groupFile = _groupFile
 
-async function _group(
-  name: string | null,
-  fn: () => void,
-  finalFlagsGenCb?: (group: Group, objects: string[], finalFlags: string) => string
-) {
+async function _group(name: string | null, fn: () => void) {
   if (name && !groups[name])
     groups[name] = {
       name,
@@ -402,8 +421,7 @@ async function _group(
       //finalFlagsToBeRemoved: [],
       finalExe: '',
       finalExeSuffix: '',
-      finalInputPattern: '{in}',
-      finalFlagsGenCb
+      finalInputPattern: '{in}'
     }
 
   if (!name) {
@@ -510,7 +528,7 @@ function _needsRebuild(src: string, obj: string, depends: string[]): boolean {
   const srcTime = fs.statSync(src).mtimeMs
   const objTime = fs.statSync(obj).mtimeMs
 
-  if (srcTime > objTime) return true;
+  if (srcTime > objTime) return true
   {
     const dep = obj + '.d'
     if (fs.existsSync(dep)) {
@@ -532,12 +550,12 @@ function _needsRebuild(src: string, obj: string, depends: string[]): boolean {
         }
       }
     }
-  };
+  }
   if (depends) {
     if (Array.isArray(depends) && depends.length > 0) {
       for (const dep of depends) {
-        if(!fs.existsSync(dep)) return true;
-        if (fs.statSync(dep).mtimeMs > objTime) return true;
+        if (!fs.existsSync(dep)) return true
+        if (fs.statSync(dep).mtimeMs > objTime) return true
       }
     }
   }
@@ -584,57 +602,67 @@ process.once('beforeExit', async () => {
 
       const suffix =
         findExecutable(group.extSuffix, fileExts) ?? findExecutable(globalExtSuffix, fileExts)
-      const obj = `${build_dir}/${fileName}${suffix ? `.${suffix}` : ''}`
-      if (
-        (file.includeInFinalOutput ||
-          findExecutable(group.extIncludeInFinalOutput, fileExts) ||
-          findExecutable(globalExtIncludeInFinalOutput, fileExts)) === true
-      )
-        objects.push(obj)
-      if (
-        needsRebuild(
-          path.join(process.cwd(), fileName),
-          path.join(process.cwd(), obj),
-          file.depends
+      for (const extraSuffix of file.extraSuffixes.length > 0 ? file.extraSuffixes : [Symbol()]) {
+        const obj =
+          file.outPath ??
+          `${build_dir}/${fileName}${typeof extraSuffix === 'symbol' ? '' : `.${Array.isArray(extraSuffix) ? extraSuffix.join('.') : extraSuffix}`}${suffix ? `.${suffix}` : ''}`
+        if (
+          (file.includeInFinalOutput ||
+            findExecutable(group.extIncludeInFinalOutput, fileExts) ||
+            findExecutable(globalExtIncludeInFinalOutput, fileExts)) === true
         )
-      ) {
-        fs.mkdirSync(path.dirname(path.join(process.cwd(), obj)), { recursive: true })
+          objects.push(obj)
+        if (
+          needsRebuild(
+            path.join(process.cwd(), fileName),
+            path.join(process.cwd(), obj),
+            file.depends
+          )
+        ) {
+          fs.mkdirSync(path.join(process.cwd(), path.dirname(obj)), { recursive: true })
 
-        const flagsArray: Flags[] = []
+          const flagsArray: Flags[] = []
 
-        flagsArray.push(...(globalSrcFlags[fileName] ?? []))
-        flagsArray.push(...(file.flags ?? []))
+          flagsArray.push(...(globalSrcFlags[fileName] ?? []))
+          flagsArray.push(...(file.flags ?? []))
 
-        for (const ext of fileExts) {
-          if (ext.length > 0) {
-            flagsArray.push(...(globalExtFlags[ext] ?? []))
-            flagsArray.push(...(group.extFlags[ext] ?? []))
+          for (const ext of fileExts.concat(
+            file.appendFlagsFromExtraSuffixes && typeof extraSuffix !== 'symbol'
+              ? Array.isArray(extraSuffix)
+                ? extraSuffix.flat()
+                : extraSuffix
+              : []
+          )) {
+            if (ext.length > 0) {
+              flagsArray.push(...(globalExtFlags[ext] ?? []))
+              flagsArray.push(...(group.extFlags[ext] ?? []))
+            }
           }
+
+          let objFlags = flagsArray
+            .sort((a, b) => a.sort - b.sort)
+            .map(x => x.flag)
+            .join(' ')
+
+          if (file.toBeRemoved.length > 0)
+            for (const remove of file.toBeRemoved) objFlags = objFlags.replaceAll(remove, '')
+
+          const executable =
+            (file.executable.length > 0 ? file.executable : undefined) ||
+            globalSrcExecutable[fileName] ||
+            findExecutable(group.extExecutable, fileExts) ||
+            findExecutable(globalExtExecutable, fileExts)
+          const cmd = `${executable} ${objFlags.replaceAll('{FILE_NAME}', fileName.toUpperCase().replaceAll('/', '_').replaceAll('.', '_')).replaceAll('{in}', fileName).replaceAll('{out}', obj)}` // out and input handling
+          if (!executable) {
+            console.log(fileName + ' skipped due to wrong configuration')
+            continue
+          }
+          console.log(cmd)
+          execSync(cmd, { stdio: 'inherit' })
         }
-
-        let objFlags = flagsArray
-          .sort((a, b) => a.sort - b.sort)
-          .map(x => x.flag)
-          .join(' ')
-
-        if (file.toBeRemoved.length > 0)
-          for (const remove of file.toBeRemoved) objFlags = objFlags.replaceAll(remove, '')
-
-        const executable =
-          (file.executable.length > 0 ? file.executable : undefined) ||
-          globalSrcExecutable[fileName] ||
-          findExecutable(group.extExecutable, fileExts) ||
-          findExecutable(globalExtExecutable, fileExts)
-        const cmd = `${executable} ${objFlags.replaceAll('{in}', fileName).replaceAll('{out}', obj)}` // out and input handling
-        if (!executable) {
-          console.log(fileName + ' skipped due to wrong configuration')
-          continue
-        }
-        console.log(cmd)
-        execSync(cmd, { stdio: 'inherit' })
+        if (fs.existsSync(obj + '_compile_commands.json'))
+          compileCommandsFiles.push(obj + '_compile_commands.json')
       }
-      if (fs.existsSync(obj + '_compile_commands.json'))
-        compileCommandsFiles.push(obj + '_compile_commands.json')
     }
 
     const finalOutName = `${build_dir}/${name}${group.finalExeSuffix ? `.${group.finalExeSuffix}` : ``}`
@@ -661,7 +689,7 @@ process.once('beforeExit', async () => {
     fs.writeFileSync(path.join(process.cwd(), build_dir, 'compile_commands.json'), compileCommands)
   }
   // @ts-ignore
-  if(global["post_compile"]) post_compile();
+  if (global['post_compile']) post_compile()
 })
 
 // #endregion

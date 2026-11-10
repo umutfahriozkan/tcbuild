@@ -1,6 +1,6 @@
 {
   "name": "tcbuilder",
-  "version": "2.11.3",
+  "version": "2.12.0",
   "description": "Build System",
   "homepage": "https://github.com/umutfahriozkan/tcbuild#readme",
   "bugs": {
@@ -14,7 +14,8 @@
   "author": "umutfahriozkan",
   "type": "module",
   "files": [
-    "dist"
+    "dist/tcbuild.js",
+    "dist/tcbuild.d.ts"
   ],
   "module": "./dist/tcbuild.js",
   "bin": {
@@ -33,7 +34,10 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "ink": "^8.0.0",
+    "react": "^19.3.1",
+    "react-jsx": "^1.0.0"
   },
   "engines": {
     "node": ">=22"

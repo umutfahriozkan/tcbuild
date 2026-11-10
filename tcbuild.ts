@@ -24,23 +24,6 @@ import url from 'node:url'
 import { execSync } from 'node:child_process'
 import * as glob from 'glob'
 
-// #region Util
-declare global {
-  var is_debug: boolean
-  var is_win: boolean
-  var is_linux: boolean
-  var build_dir: string
-  var platform: string
-  //var preset: typeof _preset
-}
-
-global.is_debug = process.argv[2] !== 'release'
-global.is_win = process.platform === 'win32'
-global.is_linux = process.platform === 'linux'
-
-global.platform ??= process.platform;
-global.build_dir = `build/${is_debug ? 'debug' : 'release'}/${platform}`
-
 /* Preset
 function _preset() {
   extFlags('c', '-c -MMD -MF {out}.d -o {out} {in}')
@@ -55,7 +38,6 @@ function _preset() {
 }
 // Preset
 global.preset = _preset*/
-// #endregion
 
 // #region Tree Builder
 declare global {
@@ -77,6 +59,8 @@ declare global {
   //  var import: typeof _import
 
   var needsRebuild: typeof _needsRebuild
+  var buildDir: typeof _buildDir
+  //var preset: typeof _preset
 }
 
 const contextStack: string[] = []
@@ -116,6 +100,7 @@ type StringKeyBooleanValue = Record<string, boolean>
 
 type Group = {
   name: string
+  buildDir?: string
   files: Record<
     string,
     {
@@ -141,6 +126,7 @@ type Group = {
   finalFlagsGenCb?: ((group: Group, objects: string[], finalFlags: string) => string) | undefined
 }
 
+let globalBuildDir: string | undefined = undefined
 const globalExtExecutable: StringKeyValue = {}
 const globalExtFlags: ExtFlags = {}
 const globalExtSuffix: StringKeyValue = {}
@@ -150,6 +136,16 @@ const globalSrcFlags: Record<string, Flags[]> = {}
 
 const groups: Record<string, Group> = {}
 let currentGroup: Group | null = null
+
+function _buildDir(dir?: string) {
+  if (currentGroup) {
+    if (dir !== undefined) currentGroup.buildDir = dir
+    return currentGroup.buildDir ?? globalBuildDir
+  }
+  if (dir !== undefined) globalBuildDir = dir
+  return globalBuildDir
+}
+global.buildDir = _buildDir
 
 //
 function _extExecutable(ext: string | string[], exec?: string) {
@@ -592,9 +588,11 @@ function findExecutable(
 }
 
 process.once('beforeExit', async () => {
-  fs.mkdirSync(path.dirname(path.join(process.cwd(), build_dir)), { recursive: true })
-  const compileCommandsFiles: string[] = []
   for (const [name, group] of Object.entries(groups)) {
+    const compileCommandsFiles: string[] = []
+    const groupBuildDir = group.buildDir ?? globalBuildDir
+    if (!groupBuildDir) throw `No build directory configured for ${name} group`
+    fs.mkdirSync(path.join(process.cwd(), groupBuildDir), { recursive: true })
     const objects: string[] = []
 
     for (const [fileName, file] of Object.entries(group.files)) {
@@ -605,7 +603,7 @@ process.once('beforeExit', async () => {
       for (const extraSuffix of file.extraSuffixes.length > 0 ? file.extraSuffixes : [Symbol()]) {
         const obj =
           file.outPath ??
-          `${build_dir}/${fileName}${typeof extraSuffix === 'symbol' ? '' : `.${Array.isArray(extraSuffix) ? extraSuffix.join('.') : extraSuffix}`}${suffix ? `.${suffix}` : ''}`
+          `${groupBuildDir}/${fileName}${typeof extraSuffix === 'symbol' ? '' : `.${Array.isArray(extraSuffix) ? extraSuffix.join('.') : extraSuffix}`}${suffix ? `.${suffix}` : ''}`
         if (
           (file.includeInFinalOutput ||
             findExecutable(group.extIncludeInFinalOutput, fileExts) ||
@@ -665,7 +663,7 @@ process.once('beforeExit', async () => {
       }
     }
 
-    const finalOutName = `${build_dir}/${name}${group.finalExeSuffix ? `.${group.finalExeSuffix}` : ``}`
+    const finalOutName = `${groupBuildDir}/${name}${group.finalExeSuffix ? `.${group.finalExeSuffix}` : ``}`
     if (group.finalExe.length > 0 && linkNeedsRebuild(finalOutName, objects)) {
       let finalFlags = group.finalFlags
         .sort((a, b) => a.sort - b.sort)
@@ -681,12 +679,16 @@ process.once('beforeExit', async () => {
         stdio: 'inherit'
       })
     }
-  }
-  if (compileCommandsFiles.length > 0) {
-    let compileCommands = '['
-    for (const file of compileCommandsFiles) compileCommands += fs.readFileSync(file)
-    compileCommands += ']'
-    fs.writeFileSync(path.join(process.cwd(), build_dir, 'compile_commands.json'), compileCommands)
+
+    if (compileCommandsFiles.length > 0) {
+      let compileCommands = '['
+      for (const file of compileCommandsFiles) compileCommands += fs.readFileSync(file)
+      compileCommands += ']'
+      fs.writeFileSync(
+        path.join(process.cwd(), groupBuildDir, 'compile_commands.json'),
+        compileCommands
+      )
+    }
   }
   // @ts-ignore
   if (global['post_compile']) post_compile()

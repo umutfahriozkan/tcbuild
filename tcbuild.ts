@@ -30,6 +30,7 @@ declare global {
   var is_win: boolean
   var is_linux: boolean
   var build_dir: string
+  var platform: string
   //var preset: typeof _preset
 }
 
@@ -37,8 +38,8 @@ global.is_debug = process.argv[2] !== 'release'
 global.is_win = process.platform === 'win32'
 global.is_linux = process.platform === 'linux'
 
-//global.build_dir = `build/${is_debug ? "debug" : "release"}/${platform}`;
-global.build_dir = `build/${is_debug ? 'debug' : 'release'}`
+global.platform ??= process.platform;
+global.build_dir = `build/${is_debug ? 'debug' : 'release'}/${platform}`
 
 /* Preset
 function _preset() {
@@ -77,7 +78,6 @@ declare global {
 
   var needsRebuild: typeof _needsRebuild
 }
-//console.info('INFO: Current build mode: ' + (is_debug ? 'debug' : 'release'))
 
 const contextStack: string[] = []
 
